@@ -1,0 +1,18 @@
+Window 1: FastAPI Backend (চালু রাখো!)
+cmd
+
+
+cd %USERPROFILE%\projects\agentic-rag-nexus
+venv\Scripts\activate
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+
+
+
+ Window 2: Streamlit Frontend (নতুন window)
+নতুন CMD window ওপেন করো (Window 1 চলতে থাকবে):
+cmd
+
+
+cd %USERPROFILE%\projects\agentic-rag-nexus
+venv\Scripts\activate
+streamlit run frontend/app.py --server.port 8501

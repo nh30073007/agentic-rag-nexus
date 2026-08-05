@@ -1,0 +1,39 @@
+version: '3.8'
+
+services:
+  api:
+    build:
+      context: ../..
+      dockerfile: deployment/docker/Dockerfile.api
+    container_name: agentic-rag-api
+    ports:
+      - "8000:8000"
+    env_file:
+      - ../../.env
+    volumes:
+      - ../../vectorstore:/app/vectorstore
+      - ../../temp_uploads:/app/temp_uploads
+    restart: unless-stopped
+    networks:
+      - agentic-rag-network
+
+  frontend:
+    build:
+      context: ../..
+      dockerfile: deployment/docker/Dockerfile.frontend
+    container_name: agentic-rag-frontend
+    ports:
+      - "8501:8501"
+    env_file:
+      - ../../.env
+    environment:
+      - API_BASE=http://api:8000/api/v1
+    depends_on:
+      - api
+    restart: unless-stopped
+    networks:
+      - agentic-rag-network
+
+networks:
+  agentic-rag-network:
+    driver: bridge
