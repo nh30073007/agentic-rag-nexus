@@ -5,7 +5,7 @@ import json
 import requests
 import streamlit as st
 
-API_BASE = "http://localhost:8000/api/v1"
+API_BASE = "https://agentic-rag-nexus.onrender.com/api/v1"
 
 
 def upload_document(file, collection_name="documents"):
