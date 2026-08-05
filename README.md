@@ -1,6 +1,6 @@
-# 🧠 Agentic RAG Nexus
+#  Agentic RAG Nexus
 
-**Multi-Agent Document Intelligence with Human-in-the-Loop**
+**Multi-Aent Document Intelligence with Human-in-the-Loop**
 
 [![Python](https://img.shields.io/badge/Python-3.11-blue)](https://python.org)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115-green)](https://fastapi.tiangolo.com)
@@ -33,7 +33,7 @@
 
 ---
 
-## 🏗️ Architecture
+##  Architecture
 
 ┌─────────────┐     ┌─────────────────┐     ┌─────────────┐
 │   START     │────▶│  Query Analyst  │────▶│  Retriever  │
@@ -68,11 +68,11 @@ Approved │ Rejected
 
 ---
 
-## 🚀 Quick Start
+##  Quick Start
 
 ### Prerequisites
 - Python 3.11+
-- [Groq API Key](https://console.groq.com)
+ [Groq API Key](https://console.groq.com)
 - [LangSmith API Key](https://smith.langchain.com) (optional)
 
 ### Local Setup
@@ -152,8 +152,8 @@ Upload project and run docker-compose
 
 📝 License
 MIT License — feel free to use for personal and commercial projects.
-🤝 Contact
+ Contact
 Built by A.H.M. Nazmul Hasan
 📧 nazmul3007@diu.edu.bd
-🐙 github.com/nh30073007
+  github.com/nh30073007
 
