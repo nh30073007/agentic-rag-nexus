@@ -15,9 +15,8 @@ def _safe_get(data, key, default=None):
     return default
 
 
-def render_chat_interface():
-    st.markdown('<div style="font-size: 1rem; font-weight: 600; color: #e5e5e5; margin-bottom: 1rem;">💬 Chat</div>', unsafe_allow_html=True)
-
+def init_chat_session():
+    """Initialize chat session state."""
     if "session_id" not in st.session_state:
         session = create_session()
         st.session_state.session_id = session.get("session_id", "default")
@@ -30,16 +29,15 @@ def render_chat_interface():
         st.session_state.pending_score = 0
         st.session_state.pending_feedback = ""
 
-    # Chat history
-    for msg in st.session_state.messages:
-        with st.chat_message(msg["role"]):
-            st.markdown(msg["content"])
-            if msg.get("sources"):
-                with st.expander("📚 Sources"):
-                    for src in msg["sources"]:
-                        st.caption(f"- {src.get('source', 'unknown')}")
 
-    # Input
+def render_chat_input():
+    """
+    Render chat input at ROOT LEVEL.
+    MUST be called at root level in app.py (NOT inside columns/tabs/expander)
+    """
+    init_chat_session()
+
+    # Only show input when not processing and no human gate active
     if not st.session_state.processing and not st.session_state.human_gate_active:
         query = st.chat_input("Ask a question about your documents...")
 
@@ -50,6 +48,26 @@ def render_chat_interface():
             st.session_state.final_answer = None
             clear_agent_logs()
             st.rerun()
+    return None
+
+
+def render_chat_interface():
+    """Render chat history, processing status, and human gate."""
+    init_chat_session()
+
+    st.markdown(
+        '<div style="font-size: 1rem; font-weight: 600; color: #e5e5e5; margin-bottom: 1rem;">💬 Chat</div>',
+        unsafe_allow_html=True,
+    )
+
+    # Chat history
+    for msg in st.session_state.messages:
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
+            if msg.get("sources"):
+                with st.expander("📚 Sources"):
+                    for src in msg["sources"]:
+                        st.caption(f"- {src.get('source', 'unknown')}")
 
     # Processing
     if st.session_state.processing:
