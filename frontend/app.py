@@ -10,7 +10,7 @@ sys.path.append(str(Path(__file__).parent.parent))
 import streamlit as st
 
 from frontend.components.agent_tracker import render_agent_tracker
-from frontend.components.chat_interface import render_chat_interface
+from frontend.components.chat_interface import render_chat_interface, render_chat_input
 from frontend.components.sidebar import render_sidebar
 
 st.set_page_config(
@@ -182,9 +182,14 @@ st.markdown("""
     </div>
 """, unsafe_allow_html=True)
 
+# ✅ ROOT LEVEL: chat_input (MUST be outside columns/tabs/expander)
+render_chat_input()
+
+# Columns for chat history + agent tracker
 chat_col, tracker_col = st.columns([3, 2], gap="large")
 
 with chat_col:
+    # Chat history, processing, human gate (NO chat_input here)
     render_chat_interface()
 
 with tracker_col:
