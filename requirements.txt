@@ -27,16 +27,15 @@ langchain-community==0.3.14
 langchain-text-splitters==0.3.5
 langsmith==0.2.10
 
-# --- Embeddings ---
-langchain-openai==0.2.0
-# ❌ REMOVE: chromadb default onnx (problematic)
+# --- Vector Store ---
+chromadb==0.6.3              # ✅ MUST HAVE
 
 # --- Document Processing ---
 pypdf==5.1.0
 python-docx==1.1.2
 
-# ❌ REMOVED: sentence-transformers (500MB+ memory)
-# ❌ REMOVED: langchain-huggingface
+# --- Embeddings (OpenAI — no local model) ---
+langchain-openai==0.2.0      # ✅ ADD THIS
 
 # --- Cache / Session ---
 redis==5.2.1
