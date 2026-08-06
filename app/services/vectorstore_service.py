@@ -1,4 +1,4 @@
-"""Vector store service - Render Free Tier Optimized (No heavy models)."""
+"""Vector store service — OpenAI embeddings (Render-safe, no local model)."""
 
 import os
 import uuid
@@ -6,31 +6,51 @@ from typing import Any, Dict, List, Optional
 
 import chromadb
 from chromadb.config import Settings
-from chromadb.utils.embedding_functions import DefaultEmbeddingFunction
+
+# ✅ API-based embedding — no local model, no ONNX, no memory issue
+try:
+    from langchain_openai import OpenAIEmbeddings
+    OPENAI_AVAILABLE = True
+except ImportError:
+    OPENAI_AVAILABLE = False
 
 from app.core.config import settings
 from app.core.exceptions import VectorStoreError
 
 
 class VectorStoreService:
-    """Lightweight vector store - uses ChromaDB default embeddings (~20MB)."""
+    """OpenAI-powered vector store — zero local memory footprint."""
 
     def __init__(self):
-        # ✅ Render-safe: /tmp path (writable ephemeral storage)
         self.persist_dir = getattr(settings, 'CHROMA_PERSIST_DIR', '/tmp/chroma_db')
         self.collection_name = getattr(settings, 'CHROMA_COLLECTION_NAME', 'documents')
-        
+        self._embeddings = None
         self._client = None
-        self._embedding_fn = None
 
     def _get_embeddings(self):
-        """ChromaDB default - tiny ONNX model, no download, ~20MB RAM."""
-        if self._embedding_fn is None:
-            self._embedding_fn = DefaultEmbeddingFunction()
-        return self._embedding_fn
+        """OpenAI API embeddings — tiny memory, instant load."""
+        if self._embeddings is None:
+            if not OPENAI_AVAILABLE:
+                raise VectorStoreError("langchain-openai not installed. Run: pip install langchain-openai")
+            
+            api_key = os.getenv("OPENAI_API_KEY")
+            if not api_key:
+                raise VectorStoreError(
+                    "OPENAI_API_KEY not set. "
+                    "Add it to Render Environment Variables. "
+                    "Get key from: https://platform.openai.com/api-keys"
+                )
+            
+            self._embeddings = OpenAIEmbeddings(
+                model="text-embedding-3-small",  # Cheapest, best quality
+                openai_api_key=api_key,
+                # Optional: organization key if needed
+                # openai_organization=os.getenv("OPENAI_ORG_ID"),
+            )
+            print("✅ OpenAI embeddings initialized")
+        return self._embeddings
 
     def _get_client(self):
-        """Get or create ChromaDB client."""
         if self._client is None:
             os.makedirs(self.persist_dir, exist_ok=True)
             self._client = chromadb.PersistentClient(
@@ -40,13 +60,9 @@ class VectorStoreService:
         return self._client
 
     def _get_collection(self, collection_name: Optional[str] = None):
-        """Get or create collection."""
         client = self._get_client()
         name = collection_name or self.collection_name
-        return client.get_or_create_collection(
-            name=name,
-            embedding_function=self._get_embeddings(),
-        )
+        return client.get_or_create_collection(name=name)
 
     def add_documents(
         self,
@@ -55,7 +71,6 @@ class VectorStoreService:
         ids: Optional[List[str]] = None,
         collection_name: Optional[str] = None,
     ) -> List[str]:
-        """Add documents - memory safe batching."""
         try:
             if not texts:
                 return []
@@ -67,19 +82,15 @@ class VectorStoreService:
             if metadatas is None:
                 metadatas = [{} for _ in texts]
 
-            # ✅ Small batches to stay under 512MB
-            batch_size = 8
-            for i in range(0, len(texts), batch_size):
-                batch_texts = texts[i:i + batch_size]
-                batch_ids = ids[i:i + batch_size]
-                batch_metas = metadatas[i:i + batch_size]
-                
-                collection.add(
-                    documents=batch_texts,
-                    metadatas=batch_metas,
-                    ids=batch_ids,
-                )
+            # ✅ API-based embedding — no local memory pressure
+            embeddings = self._get_embeddings().embed_documents(texts)
 
+            collection.add(
+                documents=texts,
+                embeddings=embeddings,
+                metadatas=metadatas,
+                ids=ids,
+            )
             return ids
             
         except Exception as e:
@@ -92,12 +103,12 @@ class VectorStoreService:
         collection_name: Optional[str] = None,
         filter_dict: Optional[Dict[str, Any]] = None,
     ) -> List[Dict[str, Any]]:
-        """Search similar documents."""
         try:
             collection = self._get_collection(collection_name)
+            query_embedding = self._get_embeddings().embed_query(query)
             
             results = collection.query(
-                query_texts=[query],
+                query_embeddings=[query_embedding],
                 n_results=top_k,
                 where=filter_dict,
                 include=["documents", "metadatas", "distances"],
@@ -121,7 +132,6 @@ class VectorStoreService:
             raise VectorStoreError(f"Search failed: {str(e)}")
 
     def delete_collection(self, collection_name: Optional[str] = None) -> None:
-        """Delete a collection."""
         try:
             client = self._get_client()
             name = collection_name or self.collection_name
@@ -130,7 +140,6 @@ class VectorStoreService:
             raise VectorStoreError(f"Failed to delete collection: {str(e)}")
 
     def get_collection_stats(self, collection_name: Optional[str] = None) -> Dict[str, Any]:
-        """Get collection statistics."""
         try:
             collection = self._get_collection(collection_name)
             return {
@@ -141,5 +150,4 @@ class VectorStoreService:
             raise VectorStoreError(f"Failed to get stats: {str(e)}")
 
 
-# Singleton instance
 vectorstore_service = VectorStoreService()
