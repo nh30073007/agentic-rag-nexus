@@ -27,8 +27,8 @@ langchain-community==0.3.14
 langchain-text-splitters==0.3.5
 langsmith==0.2.10
 
-# --- Embeddings (Google Gemini — FREE tier, 1500 req/day) ---
-langchain-google-genai==2.0.0
+# --- Embeddings (PERMANENT FIX: Local, tiny, no API key) ---
+fastembed==0.4.0
 
 # --- Vector Store ---
 chromadb==0.6.3

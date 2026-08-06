@@ -1,4 +1,4 @@
-"""Vector store service — Google Gemini embeddings (FREE tier)."""
+"""Vector store service — PERMANENT FIX: fastembed (no API key, 33MB model)."""
 
 import os
 import uuid
@@ -7,19 +7,19 @@ from typing import Any, Dict, List, Optional
 import chromadb
 from chromadb.config import Settings
 
-# ✅ Google Gemini — free tier, 1500 requests/day, no credit card
+# ✅ PERMANENT FIX: fastembed — 33MB model, no API key, CPU only
 try:
-    from langchain_google_genai import GoogleGenerativeAIEmbeddings
-    GOOGLE_AVAILABLE = True
+    from langchain_community.embeddings import FastEmbedEmbeddings
+    FASTEMBED_AVAILABLE = True
 except ImportError:
-    GOOGLE_AVAILABLE = False
+    FASTEMBED_AVAILABLE = False
 
 from app.core.config import settings
 from app.core.exceptions import VectorStoreError
 
 
 class VectorStoreService:
-    """Google Gemini embeddings — completely free."""
+    """FastEmbed — permanent solution. No API key, no credits, no OOM."""
 
     def __init__(self):
         self.persist_dir = getattr(settings, 'CHROMA_PERSIST_DIR', '/tmp/chroma_db')
@@ -29,26 +29,19 @@ class VectorStoreService:
 
     def _get_embeddings(self):
         if self._embeddings is None:
-            if not GOOGLE_AVAILABLE:
-                raise VectorStoreError("langchain-google-genai not installed. Run: pip install langchain-google-genai")
-
-            # ✅ Read from env or settings
-            api_key = os.getenv("GOOGLE_API_KEY") or getattr(settings, 'GOOGLE_API_KEY', None)
-            
-            if not api_key:
+            if not FASTEMBED_AVAILABLE:
                 raise VectorStoreError(
-                    "GOOGLE_API_KEY not set.\n"
-                    "1. Go to: https://aistudio.google.com/app/apikey\n"
-                    "2. Click 'Create API key'\n"
-                    "3. Copy the key\n"
-                    "4. Add to Render: Dashboard → Environment → GOOGLE_API_KEY=AIzaSy..."
+                    "fastembed not installed. "
+                    "Add 'fastembed==0.4.0' to requirements.txt"
                 )
 
-            self._embeddings = GoogleGenerativeAIEmbeddings(
-                model="models/embedding-001",
-                google_api_key=api_key,
+            # ✅ BAAI/bge-small-en-v1.5 = 33MB, excellent quality, CPU only
+            self._embeddings = FastEmbedEmbeddings(
+                model_name="BAAI/bge-small-en-v1.5",
+                cache_dir="/tmp/fastembed_cache",  # Render writable
+                threads=2,  # Limit CPU usage on free tier
             )
-            print("✅ Google Gemini embeddings initialized (FREE TIER)")
+            print("✅ FastEmbed initialized (BAAI/bge-small-en-v1.5, 33MB, no API key)")
         return self._embeddings
 
     def _get_client(self):
