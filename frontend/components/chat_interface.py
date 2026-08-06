@@ -19,6 +19,16 @@ def _safe_get(data, key, default=None):
         return default
 
 
+def _safe_state(state):
+    """Ensure state is dict — handles tuple/list from LangGraph."""
+    if isinstance(state, dict):
+        return state
+    if isinstance(state, (list, tuple)) and len(state) > 0:
+        if isinstance(state[0], dict):
+            return state[0]
+    return {}
+
+
 def init_chat_session():
     """Initialize session state safely."""
     if "session_id" not in st.session_state:
@@ -40,15 +50,14 @@ def init_chat_session():
         st.session_state.pending_score = 0
         st.session_state.pending_feedback = ""
         st.session_state.agent_logs = []
-        st.session_state.debug_log = []  # For troubleshooting
+        st.session_state.debug_log = []
 
 
 def _log_debug(msg):
-    """Add debug message (invisible to user, stored in session)."""
+    """Add debug message."""
     if "debug_log" not in st.session_state:
         st.session_state.debug_log = []
     st.session_state.debug_log.append(str(msg))
-    # Keep last 20 only
     st.session_state.debug_log = st.session_state.debug_log[-20:]
 
 
@@ -118,9 +127,15 @@ def render_chat_interface():
                 st.session_state.human_gate_active = False
                 st.rerun()
 
+    # Debug logs (hidden expander for troubleshooting)
+    if st.session_state.get("debug_log"):
+        with st.expander("🐛 Debug Logs", expanded=False):
+            for log in st.session_state.debug_log[-10:]:
+                st.text(log)
+
 
 def _process_streaming_query():
-    """Process stream with per-line error isolation."""
+    """Process stream — show answer even on backend error."""
     if not st.session_state.messages:
         _add_assistant_message("⚠️ No messages found.")
         return
@@ -135,7 +150,6 @@ def _process_streaming_query():
         _add_assistant_message("⚠️ Empty question.")
         return
 
-    # Status placeholder
     status = st.empty()
     status.info("🔄 Connecting to agents...")
 
@@ -146,45 +160,44 @@ def _process_streaming_query():
         )
 
         if response.status_code != 200:
-            _add_assistant_message(f"❌ Backend error: {response.status_code}")
+            _try_show_pending_answer(f"Backend error: {response.status_code}")
             return
 
         human_gate_triggered = False
         last_node = ""
         line_count = 0
+        stream_error = None
 
         for line in response.iter_lines():
             line_count += 1
             if not line:
                 continue
 
-            # Parse line with full isolation
             try:
                 line_text = line.decode("utf-8", errors="ignore")
             except Exception as e:
-                _log_debug(f"Decode error line {line_count}: {e}")
                 continue
 
             if not line_text.startswith("data: "):
                 continue
 
-            # Parse JSON
             try:
                 raw_data = json.loads(line_text[6:])
-            except Exception as e:
-                _log_debug(f"JSON error line {line_count}: {e} | text: {line_text[:100]}")
+            except Exception:
                 continue
 
-            # Ensure dict
-            if not isinstance(raw_data, dict):
-                _log_debug(f"Non-dict line {line_count}: {type(raw_data)} | {str(raw_data)[:100]}")
+            # ✅ DEFENSIVE: raw_data might be tuple after backend fixes
+            if isinstance(raw_data, (list, tuple)) and len(raw_data) > 0:
+                if isinstance(raw_data[0], dict):
+                    raw_data = raw_data[0]
+                else:
+                    continue
+            elif not isinstance(raw_data, dict):
                 continue
 
             msg_type = _safe_get(raw_data, "type")
 
-            # ==========================================
             # NODE UPDATE
-            # ==========================================
             if msg_type == "node_update":
                 try:
                     node = str(_safe_get(raw_data, "node", "unknown"))
@@ -196,10 +209,9 @@ def _process_streaming_query():
 
                     add_agent_log(node, "completed", msg_text)
 
-                    # Extract node data safely
+                    # Extract node data safely — might be tuple
                     node_data = _safe_get(raw_data, "data", {})
-                    if not isinstance(node_data, dict):
-                        node_data = {}
+                    node_data = _safe_state(node_data)  # Handle tuple
 
                     # CRITIC
                     if node == "critic":
@@ -207,11 +219,11 @@ def _process_streaming_query():
                         feedback = str(node_data.get("critique_feedback", ""))
                         if score is not None:
                             try:
-                                st.session_state.pending_score = int(score)
+                                st.session_state.pending_score = float(score)
                                 st.session_state.pending_feedback = feedback
                                 status.info(f"🛡️ **Critic Score: {score}/10**")
                             except Exception as e:
-                                _log_debug(f"Score parse error: {e}")
+                                _log_debug(f"Score parse: {e}")
 
                     # SYNTHESIZER
                     if node == "synthesizer":
@@ -220,9 +232,9 @@ def _process_streaming_query():
                             try:
                                 gen_text = str(generation)
                                 st.session_state.pending_answer = gen_text
-                                status.info(f"📝 **Draft ready** ({len(gen_text)} chars)")
+                                status.info(f"📝 **Answer ready** ({len(gen_text)} chars)")
                             except Exception as e:
-                                _log_debug(f"Generation parse error: {e}")
+                                _log_debug(f"Gen parse: {e}")
 
                     # HUMAN GATE
                     if node == "human_gate":
@@ -234,81 +246,58 @@ def _process_streaming_query():
                         return
 
                 except Exception as e:
-                    _log_debug(f"Node update error: {e}")
+                    _log_debug(f"Node error: {e}")
                     continue
 
-            # ==========================================
-            # COMPLETE
-            # ==========================================
             elif msg_type == "complete":
                 status.success("✅ Agents finished")
 
-            # ==========================================
-            # ERROR
-            # ==========================================
             elif msg_type == "error":
                 err_msg = str(_safe_get(raw_data, "message", "Unknown error"))
-                _add_assistant_message(f"❌ Agent error: {err_msg}")
-                return
+                stream_error = err_msg
+                _log_debug(f"Stream error: {err_msg}")
+                # Don't return immediately — try to show pending answer
+                break
 
-        # ==========================================
-        # AFTER STREAM — Get final answer
-        # ==========================================
+        # After stream — show answer if we have one, even on error
         if not human_gate_triggered:
-            _finalize_after_stream(status)
+            if stream_error and st.session_state.get("pending_answer"):
+                # Backend errored but we have a synthesized answer!
+                _show_answer_with_note(stream_error)
+            else:
+                _finalize_after_stream(status)
 
     except Exception as e:
-        _add_assistant_message(f"❌ Connection error: {str(e)}")
+        _try_show_pending_answer(f"Connection error: {str(e)}")
 
 
 def _finalize_after_stream(status_placeholder):
-    """Get final answer — bulletproof against any backend format."""
+    """Get final answer from backend."""
     try:
-        status_placeholder.info("📡 Finalizing answer...")
+        status_placeholder.info("📡 Finalizing...")
 
         session_id = str(st.session_state.get("session_id", "default"))
         raw_status = get_session_status(session_id)
 
-        # ✅ ULTRA-DEFENSIVE: Handle ANY format backend sends
-        if isinstance(raw_status, dict):
-            status_data = raw_status
-        elif isinstance(raw_status, (list, tuple)) and len(raw_status) > 0:
-            # If tuple/list, try first element
-            if isinstance(raw_status[0], dict):
-                status_data = raw_status[0]
-            else:
-                status_data = {}
-        else:
-            status_data = {}
+        # ✅ ULTRA-DEFENSIVE
+        status_data = _safe_state(raw_status)
+        state = _safe_state(status_data.get("current_state", {}))
 
-        # Extract state safely
-        state = status_data.get("current_state", {}) if isinstance(status_data, dict) else {}
-        if not isinstance(state, dict):
-            state = {}
-
-        # Get generation
         generation = state.get("generation")
         if not generation:
             generation = st.session_state.get("pending_answer", "")
 
         human_approved = state.get("human_approved")
-        
-        critique_score = state.get("critique_score")
-        if critique_score is None:
-            critique_score = st.session_state.get("pending_score")
+        critique_score = state.get("critique_score") or st.session_state.get("pending_score")
+        critique_feedback = state.get("critique_feedback", "") or st.session_state.get("pending_feedback", "")
 
-        critique_feedback = state.get("critique_feedback", "")
-        if not critique_feedback:
-            critique_feedback = st.session_state.get("pending_feedback", "")
-
-        # Show score
         if critique_score is not None:
             try:
                 status_placeholder.success(f"🛡️ Critic Score: {critique_score}/10")
             except Exception:
                 pass
 
-        # Show human gate if answer exists but not approved
+        # Show human gate
         if generation and human_approved is None:
             st.session_state.pending_answer = str(generation)
             st.session_state.pending_score = int(critique_score or 0)
@@ -326,7 +315,39 @@ def _finalize_after_stream(status_placeholder):
             _add_assistant_message("⚠️ No answer generated. Try uploading documents first.")
 
     except Exception as e:
-        _add_assistant_message(f"❌ Finalize error: {str(e)}")
+        _try_show_pending_answer(f"Finalize error: {str(e)}")
+
+
+def _try_show_pending_answer(error_msg):
+    """Show pending answer if available, otherwise show error."""
+    pending = st.session_state.get("pending_answer", "")
+    
+    if pending and len(pending) > 10:
+        score = st.session_state.get("pending_score")
+        msg = pending
+        if score is not None:
+            msg += f"\n\n---\n🛡️ **Critic Score: {score}/10**"
+        if error_msg:
+            msg += f"\n\n⚠️ *Note: {error_msg}*"
+        _add_assistant_message(msg)
+    else:
+        if error_msg:
+            _add_assistant_message(f"❌ {error_msg}")
+        else:
+            _add_assistant_message("⚠️ No answer generated. Try uploading documents first.")
+
+
+def _show_answer_with_note(note):
+    """Show the synthesized answer with an error note."""
+    pending = st.session_state.get("pending_answer", "")
+    score = st.session_state.get("pending_score")
+    
+    msg = pending
+    if score is not None:
+        msg += f"\n\n---\n🛡️ **Critic Score: {score}/10**"
+    msg += f"\n\n⚠️ *Backend note: {note}*"
+    
+    _add_assistant_message(msg)
 
 
 def _add_assistant_message(content):
@@ -338,7 +359,6 @@ def _add_assistant_message(content):
             "sources": [],
         })
     except Exception as e:
-        # Absolute fallback
         st.session_state.messages = st.session_state.messages or []
         st.session_state.messages.append({
             "role": "assistant",
