@@ -5,139 +5,171 @@ import os
 import time
 
 import requests
-import streamlit as st
 
-# ✅ Auto-detect environment (local vs Streamlit Cloud)
+# ============================================
+# Environment Config
+# ============================================
 LOCAL_URL = "http://localhost:8000/api/v1"
 PROD_URL = "https://agentic-rag-nexus.onrender.com/api/v1"
 API_BASE = os.getenv("API_BASE_URL", PROD_URL)
 
-# Render free tier wake-up time
-MAX_RETRIES = 3
-BACKEND_TIMEOUT = 60  # seconds (Render sleep থেকে wake up হতে 30-60s লাগে)
+# Timeouts (seconds)
+HEALTH_TIMEOUT = 10      # Quick health probe
+DEFAULT_TIMEOUT = 30     # Standard API calls
+UPLOAD_TIMEOUT = 120     # File upload + embedding (Render can be slow)
+STREAM_TIMEOUT = 120     # Chat SSE stream
 
 
-def _request_with_retry(method, endpoint, **kwargs):
+class APIError(Exception):
+    """Custom exception for API failures."""
+    def __init__(self, message, status_code=None):
+        super().__init__(message)
+        self.status_code = status_code
+
+
+# ============================================
+# Low-level Request Handler
+# ============================================
+def _request(method, endpoint, timeout=DEFAULT_TIMEOUT, retries=2, **kwargs):
     """
-    Make HTTP request with retry logic for Render sleep mode.
+    Make HTTP request with retry for Render sleep/wake.
+    Returns Response object.
+    Raises APIError on failure.
     """
     url = f"{API_BASE}{endpoint}"
     last_error = None
 
-    for attempt in range(1, MAX_RETRIES + 1):
+    for attempt in range(1, retries + 1):
         try:
-            response = requests.request(
-                method,
-                url,
-                timeout=BACKEND_TIMEOUT,
-                **kwargs
-            )
+            response = requests.request(method, url, timeout=timeout, **kwargs)
             response.raise_for_status()
             return response
 
         except requests.exceptions.ConnectionError as e:
-            last_error = e
-            if attempt < MAX_RETRIES:
-                wait_time = attempt * 5  # 5s, 10s, 15s
-                time.sleep(wait_time)
-            continue
+            last_error = APIError(
+                f"Cannot connect to backend (attempt {attempt}/{retries}). "
+                "Backend may be sleeping — wait 30s and retry."
+            )
+            if attempt < retries:
+                time.sleep(5 * attempt)
 
         except requests.exceptions.Timeout as e:
-            last_error = e
-            if attempt < MAX_RETRIES:
-                time.sleep(10)
-            continue
+            last_error = APIError(
+                f"Request timed out after {timeout}s (attempt {attempt}/{retries})."
+            )
+            if attempt < retries:
+                time.sleep(5 * attempt)
 
         except requests.exceptions.HTTPError as e:
-            # Don't retry 4xx errors (client errors)
-            if 400 <= e.response.status_code < 500:
-                raise
-            last_error = e
-            if attempt < MAX_RETRIES:
-                time.sleep(5)
-            continue
+            status = e.response.status_code
+            text = e.response.text[:300]
+            raise APIError(f"Server error {status}: {text}", status_code=status)
 
-    # All retries exhausted
     raise last_error
 
 
-def _safe_request(method, endpoint, **kwargs):
-    """
-    Wrapper that catches errors and returns safe defaults for UI.
-    """
+# ============================================
+# Public API Functions
+# ============================================
+
+def health_check():
+    """Quick backend health check."""
     try:
-        return _request_with_retry(method, endpoint, **kwargs)
-    except requests.exceptions.ConnectionError:
-        st.error("🔴 Backend is sleeping or unreachable. Please wait 30-60s and refresh.")
-        raise
-    except requests.exceptions.Timeout:
-        st.error("⏱️ Backend is taking too long to respond. It may be waking up...")
-        raise
-    except requests.exceptions.HTTPError as e:
-        st.error(f"❌ Server error {e.response.status_code}: {e.response.text[:200]}")
-        raise
+        resp = _request("GET", "/health/health", timeout=HEALTH_TIMEOUT, retries=2)
+        return resp.json()
+    except APIError as e:
+        return {"status": "unhealthy", "detail": str(e)}
 
 
 def upload_document(file, collection_name="documents"):
-    """Upload a document to the backend."""
+    """Upload a document. Returns JSON or error dict."""
     files = {"file": (file.name, file.getvalue(), file.type)}
     data = {"collection_name": collection_name}
     try:
-        response = _safe_request("POST", "/upload/upload", files=files, data=data)
-        return response.json()
-    except Exception:
-        return {"error": "Upload failed. Is backend running?"}
+        resp = _request(
+            "POST",
+            "/upload/upload",
+            files=files,
+            data=data,
+            timeout=UPLOAD_TIMEOUT,
+            retries=2,
+        )
+        return resp.json()
+    except APIError as e:
+        return {"error": str(e), "status_code": e.status_code}
 
 
 def list_documents():
-    """List all uploaded documents."""
+    """List uploaded documents. Never crashes — returns empty list on error."""
     try:
-        response = _safe_request("GET", "/upload/documents")
-        return response.json()
-    except Exception:
+        resp = _request("GET", "/upload/documents", timeout=DEFAULT_TIMEOUT, retries=2)
+        return resp.json()
+    except APIError:
         return {"documents": []}
 
 
 def create_session():
     """Create a new chat session."""
     try:
-        response = _safe_request("POST", "/session/create")
-        return response.json()
-    except Exception:
-        return {"session_id": "fallback-session", "error": "Backend unreachable"}
+        resp = _request("POST", "/session/create", timeout=DEFAULT_TIMEOUT, retries=2)
+        return resp.json()
+    except APIError:
+        return {"session_id": "default-session"}
 
 
 def get_session_history(session_id):
-    """Get chat history."""
+    """Get chat history for a session."""
     try:
-        response = _safe_request("GET", f"/session/{session_id}/history")
-        return response.json()
-    except Exception:
+        resp = _request(
+            "GET",
+            f"/session/{session_id}/history",
+            timeout=DEFAULT_TIMEOUT,
+            retries=2,
+        )
+        return resp.json()
+    except APIError:
         return {"history": []}
 
 
+def get_session_status(session_id):
+    """Get current session state."""
+    try:
+        resp = _request(
+            "GET",
+            f"/chat/session/{session_id}",
+            timeout=DEFAULT_TIMEOUT,
+            retries=2,
+        )
+        return resp.json()
+    except APIError:
+        return {}
+
+
 def send_chat_stream(query, session_id, collection_name="documents"):
-    """Send chat query and return SSE stream."""
+    """
+    Send chat query and return SSE stream response.
+    Caller must iterate response.iter_lines().
+    """
     payload = {
         "query": query,
         "session_id": session_id,
         "collection_name": collection_name,
     }
-    # Stream requests need manual handling - don't use _safe_request
+    url = f"{API_BASE}/chat/stream"
+
     try:
-        response = requests.post(
-            f"{API_BASE}/chat/stream",
-            json=payload,
-            stream=True,
-            timeout=BACKEND_TIMEOUT,
-        )
-        return response
+        resp = requests.post(url, json=payload, stream=True, timeout=STREAM_TIMEOUT)
+        resp.raise_for_status()
+        return resp
     except requests.exceptions.ConnectionError:
-        st.error("🔴 Backend is sleeping. Please wait 30-60s and try again.")
-        raise
+        raise APIError("Backend connection failed. It may be waking up — wait 30s.")
     except requests.exceptions.Timeout:
-        st.error("⏱️ Backend timeout. It may be waking up from sleep...")
-        raise
+        raise APIError("Chat stream timed out.")
+    except requests.exceptions.HTTPError as e:
+        raise APIError(
+            f"Server error {e.response.status_code}: {e.response.text[:300]}",
+            status_code=e.response.status_code,
+        )
 
 
 def approve_answer(session_id, decision, feedback=""):
@@ -148,16 +180,7 @@ def approve_answer(session_id, decision, feedback=""):
         "feedback": feedback,
     }
     try:
-        response = _safe_request("POST", "/chat/approve", json=payload)
-        return response.json()
-    except Exception:
-        return {"error": "Approval failed"}
-
-
-def get_session_status(session_id):
-    """Get current session state."""
-    try:
-        response = _safe_request("GET", f"/chat/session/{session_id}")
-        return response.json()
-    except Exception:
-        return {}
+        resp = _request("POST", "/chat/approve", json=payload, timeout=DEFAULT_TIMEOUT, retries=2)
+        return resp.json()
+    except APIError as e:
+        return {"error": str(e)}
