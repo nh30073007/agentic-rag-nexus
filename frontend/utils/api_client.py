@@ -6,6 +6,7 @@ import time
 
 import requests
 
+
 # ============================================
 # Environment Config
 # ============================================
@@ -13,15 +14,13 @@ LOCAL_URL = "http://localhost:8000/api/v1"
 PROD_URL = "https://agentic-rag-nexus.onrender.com/api/v1"
 API_BASE = os.getenv("API_BASE_URL", PROD_URL)
 
-# Timeouts (seconds)
-HEALTH_TIMEOUT = 10      # Quick health probe
-DEFAULT_TIMEOUT = 30     # Standard API calls
-UPLOAD_TIMEOUT = 120     # File upload + embedding (Render can be slow)
-STREAM_TIMEOUT = 120     # Chat SSE stream
+HEALTH_TIMEOUT = 10
+DEFAULT_TIMEOUT = 30
+UPLOAD_TIMEOUT = 120
+STREAM_TIMEOUT = 120
 
 
 class APIError(Exception):
-    """Custom exception for API failures."""
     def __init__(self, message, status_code=None):
         super().__init__(message)
         self.status_code = status_code
@@ -31,11 +30,6 @@ class APIError(Exception):
 # Low-level Request Handler
 # ============================================
 def _request(method, endpoint, timeout=DEFAULT_TIMEOUT, retries=2, **kwargs):
-    """
-    Make HTTP request with retry for Render sleep/wake.
-    Returns Response object.
-    Raises APIError on failure.
-    """
     url = f"{API_BASE}{endpoint}"
     last_error = None
 
@@ -69,87 +63,101 @@ def _request(method, endpoint, timeout=DEFAULT_TIMEOUT, retries=2, **kwargs):
 
 
 # ============================================
+# Safe JSON Parser — Handles tuple/list responses
+# ============================================
+def _safe_json(response):
+    """Parse JSON, ensure dict return. Handles tuple/list gracefully."""
+    try:
+        data = response.json()
+        if isinstance(data, dict):
+            return data
+        elif isinstance(data, list) and len(data) > 0 and isinstance(data[0], dict):
+            return data[0]  # Take first item if list of dicts
+        else:
+            return {"raw_response": data, "error": "Unexpected response format"}
+    except Exception as e:
+        return {"error": f"JSON parse failed: {str(e)}"}
+
+
+# ============================================
 # Public API Functions
 # ============================================
 
 def health_check():
-    """Quick backend health check."""
     try:
         resp = _request("GET", "/health/health", timeout=HEALTH_TIMEOUT, retries=2)
-        return resp.json()
+        return _safe_json(resp)
     except APIError as e:
         return {"status": "unhealthy", "detail": str(e)}
 
 
 def upload_document(file, collection_name="documents"):
-    """Upload a document. Returns JSON or error dict."""
     files = {"file": (file.name, file.getvalue(), file.type)}
     data = {"collection_name": collection_name}
     try:
-        resp = _request(
-            "POST",
-            "/upload/upload",
-            files=files,
-            data=data,
-            timeout=UPLOAD_TIMEOUT,
-            retries=2,
-        )
-        return resp.json()
+        resp = _request("POST", "/upload/upload", files=files, data=data, timeout=UPLOAD_TIMEOUT, retries=2)
+        return _safe_json(resp)
     except APIError as e:
         return {"error": str(e), "status_code": e.status_code}
 
 
 def list_documents():
-    """List uploaded documents. Never crashes — returns empty list on error."""
     try:
         resp = _request("GET", "/upload/documents", timeout=DEFAULT_TIMEOUT, retries=2)
-        return resp.json()
+        return _safe_json(resp)
     except APIError:
         return {"documents": []}
 
 
 def create_session():
-    """Create a new chat session."""
     try:
         resp = _request("POST", "/session/create", timeout=DEFAULT_TIMEOUT, retries=2)
-        return resp.json()
+        return _safe_json(resp)
     except APIError:
         return {"session_id": "default-session"}
 
 
 def get_session_history(session_id):
-    """Get chat history for a session."""
     try:
-        resp = _request(
-            "GET",
-            f"/session/{session_id}/history",
-            timeout=DEFAULT_TIMEOUT,
-            retries=2,
-        )
-        return resp.json()
+        resp = _request("GET", f"/session/{session_id}/history", timeout=DEFAULT_TIMEOUT, retries=2)
+        return _safe_json(resp)
     except APIError:
         return {"history": []}
 
 
 def get_session_status(session_id):
-    """Get current session state."""
+    """Get current session state — BULLETPROOF."""
     try:
-        resp = _request(
-            "GET",
-            f"/chat/session/{session_id}",
-            timeout=DEFAULT_TIMEOUT,
-            retries=2,
-        )
-        return resp.json()
+        resp = _request("GET", f"/chat/session/{session_id}", timeout=DEFAULT_TIMEOUT, retries=2)
+        result = _safe_json(resp)
+        
+        # Ensure we always return a dict with expected fields
+        if not isinstance(result, dict):
+            result = {}
+        
+        # Normalize nested state if present
+        if "current_state" in result and isinstance(result["current_state"], dict):
+            state = result["current_state"]
+            return {
+                "current_state": state,
+                "generation": state.get("generation"),
+                "human_approved": state.get("human_approved"),
+                "critique_score": state.get("critique_score"),
+                "critique_feedback": state.get("critique_feedback", ""),
+            }
+        return result
+        
     except APIError:
-        return {}
+        return {
+            "current_state": {},
+            "generation": None,
+            "human_approved": None,
+            "critique_score": None,
+            "critique_feedback": "",
+        }
 
 
 def send_chat_stream(query, session_id, collection_name="documents"):
-    """
-    Send chat query and return SSE stream response.
-    Caller must iterate response.iter_lines().
-    """
     payload = {
         "query": query,
         "session_id": session_id,
@@ -173,7 +181,6 @@ def send_chat_stream(query, session_id, collection_name="documents"):
 
 
 def approve_answer(session_id, decision, feedback=""):
-    """Send human approval/rejection."""
     payload = {
         "session_id": session_id,
         "decision": decision,
@@ -181,6 +188,6 @@ def approve_answer(session_id, decision, feedback=""):
     }
     try:
         resp = _request("POST", "/chat/approve", json=payload, timeout=DEFAULT_TIMEOUT, retries=2)
-        return resp.json()
+        return _safe_json(resp)
     except APIError as e:
         return {"error": str(e)}
