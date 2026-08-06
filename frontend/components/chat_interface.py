@@ -1,4 +1,4 @@
-"""Clean chat interface."""
+"""Kimi-style smooth chat interface."""
 
 import json
 
@@ -18,8 +18,12 @@ def _safe_get(data, key, default=None):
 def init_chat_session():
     """Initialize chat session state."""
     if "session_id" not in st.session_state:
-        session = create_session()
-        st.session_state.session_id = session.get("session_id", "default")
+        try:
+            session = create_session()
+            st.session_state.session_id = session.get("session_id", "default")
+        except Exception:
+            st.session_state.session_id = "default"
+        
         st.session_state.messages = []
         st.session_state.processing = False
         st.session_state.human_gate_active = False
@@ -32,27 +36,32 @@ def init_chat_session():
 
 def render_chat_input():
     """
-    Render chat input at ROOT LEVEL.
-    MUST be called at root level in app.py (NOT inside columns/tabs/expander)
+    ROOT LEVEL chat input.
+    MUST be called outside columns/tabs/expander in app.py.
     """
     init_chat_session()
 
-    # Only show input when not processing and no human gate active
+    # Show input only when ready
     if not st.session_state.processing and not st.session_state.human_gate_active:
-        query = st.chat_input("Ask a question about your documents...")
+        query = st.chat_input(
+            "Ask a question about your documents...",
+            key="chat_input_main",
+        )
 
-        if query:
-            st.session_state.messages.append({"role": "user", "content": query})
+        if query and query.strip():
+            st.session_state.messages.append({
+                "role": "user",
+                "content": query.strip()
+            })
             st.session_state.processing = True
             st.session_state.human_gate_resolved = False
             st.session_state.final_answer = None
             clear_agent_logs()
             st.rerun()
-    return None
 
 
 def render_chat_interface():
-    """Render chat history, processing status, and human gate."""
+    """Render chat history, processing, and human gate."""
     init_chat_session()
 
     st.markdown(
@@ -60,7 +69,7 @@ def render_chat_interface():
         unsafe_allow_html=True,
     )
 
-    # Chat history
+    # ✅ Chat history — beautiful rendering
     for msg in st.session_state.messages:
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
@@ -69,12 +78,17 @@ def render_chat_interface():
                     for src in msg["sources"]:
                         st.caption(f"- {src.get('source', 'unknown')}")
 
-    # Processing
+    # ✅ Processing state — typing indicator
     if st.session_state.processing:
         with st.chat_message("assistant"):
-            process_streaming_query()
+            with st.status("🤔 Thinking...", expanded=True) as status:
+                result = _process_streaming_query()
+                if result.get("success"):
+                    status.update(label="✅ Done", state="complete", expanded=False)
+                else:
+                    status.update(label=f"❌ {result.get('error', 'Error')}", state="error")
 
-    # Human gate
+    # ✅ Human gate
     if st.session_state.human_gate_active and not st.session_state.human_gate_resolved:
         with st.chat_message("assistant"):
             st.info("⏳ Waiting for your approval...")
@@ -86,19 +100,40 @@ def render_chat_interface():
             )
 
 
-def process_streaming_query():
+def _process_streaming_query():
+    """
+    Process streaming chat query.
+    Returns dict: {"success": bool, "error": str|None}
+    """
+    if not st.session_state.messages:
+        return {"success": False, "error": "No messages"}
+
     last_message = st.session_state.messages[-1]
+    if last_message["role"] != "user":
+        return {"success": False, "error": "Last message not from user"}
+
     query = last_message["content"]
-
-    status_placeholder = st.empty()
     answer_placeholder = st.empty()
-
-    status_placeholder.info("🔄 Agents are working...")
-
-    human_gate_triggered = False
+    full_answer = ""
 
     try:
-        response = send_chat_stream(query=query, session_id=st.session_state.session_id)
+        response = send_chat_stream(
+            query=query,
+            session_id=st.session_state.session_id,
+        )
+
+        # Check if response is valid
+        if response.status_code != 200:
+            error_msg = f"Backend error: {response.status_code}"
+            st.session_state.messages.append({
+                "role": "assistant",
+                "content": f"❌ {error_msg}",
+                "sources": [],
+            })
+            st.session_state.processing = False
+            return {"success": False, "error": error_msg}
+
+        human_gate_triggered = False
 
         for line in response.iter_lines():
             if not line:
@@ -119,12 +154,13 @@ def process_streaming_query():
 
             msg_type = _safe_get(data, "type")
 
+            # Agent tracker logs
             if msg_type == "node_update":
                 node = _safe_get(data, "node", "")
                 msg = _safe_get(data, "message", "")
-
                 add_agent_log(node, "completed", msg)
 
+                # Extract critic score
                 if node == "critic":
                     node_data = _safe_get(data, "data", {})
                     score = _safe_get(node_data, "critique_score")
@@ -133,57 +169,88 @@ def process_streaming_query():
                         st.session_state.pending_score = score
                         st.session_state.pending_feedback = feedback
 
+                # Extract synthesizer answer
                 if node == "synthesizer":
                     node_data = _safe_get(data, "data", {})
                     generation = _safe_get(node_data, "generation")
                     if generation:
                         st.session_state.pending_answer = generation
 
+                # Human gate triggered
                 if node == "human_gate":
                     human_gate_triggered = True
                     st.session_state.human_gate_active = True
                     st.session_state.processing = False
 
             elif msg_type == "complete":
-                status_placeholder.success("✅ Complete")
+                pass  # Stream complete
 
             elif msg_type == "error":
                 err_msg = _safe_get(data, "message", "Unknown error")
-                status_placeholder.error(f"❌ Error: {err_msg}")
-
-        # After stream ends
-        if not human_gate_triggered:
-            status = get_session_status(st.session_state.session_id)
-            state = _safe_get(status, "current_state", {})
-
-            generation = state.get("generation")
-            human_approved = state.get("human_approved")
-            critique_score = state.get("critique_score")
-
-            if generation and human_approved is None and critique_score is not None and critique_score >= 7:
-                st.session_state.pending_answer = generation
-                st.session_state.pending_score = critique_score
-                st.session_state.pending_feedback = state.get("critique_feedback", "")
-                st.session_state.human_gate_active = True
-                st.session_state.processing = False
-                status_placeholder.info("🛑 Human approval required...")
-                st.rerun()
-                return
-
-            if generation:
-                answer_placeholder.markdown(generation)
-                if critique_score:
-                    status_placeholder.caption(f"🛡️ Critic Score: {critique_score}/10")
-
                 st.session_state.messages.append({
                     "role": "assistant",
-                    "content": generation,
+                    "content": f"❌ Error: {err_msg}",
                     "sources": [],
                 })
                 st.session_state.processing = False
-            else:
-                status_placeholder.warning("⚠️ No answer generated")
+                return {"success": False, "error": err_msg}
+
+        # After stream ends
+        if not human_gate_triggered:
+            # Check final session status
+            try:
+                status = get_session_status(st.session_state.session_id)
+                state = _safe_get(status, "current_state", {})
+
+                generation = state.get("generation")
+                human_approved = state.get("human_approved")
+                critique_score = state.get("critique_score")
+
+                # Auto-approve if score >= 7 (optional, or show gate)
+                if generation and human_approved is None and critique_score is not None:
+                    if critique_score >= 7:
+                        st.session_state.pending_answer = generation
+                        st.session_state.pending_score = critique_score
+                        st.session_state.pending_feedback = state.get("critique_feedback", "")
+                        st.session_state.human_gate_active = True
+                        st.session_state.processing = False
+                        return {"success": True, "error": None}
+
+                # Direct answer (no gate needed)
+                if generation:
+                    st.session_state.messages.append({
+                        "role": "assistant",
+                        "content": generation,
+                        "sources": [],
+                    })
+                    st.session_state.processing = False
+                    return {"success": True, "error": None}
+                else:
+                    st.session_state.messages.append({
+                        "role": "assistant",
+                        "content": "⚠️ No answer generated. Try uploading documents first.",
+                        "sources": [],
+                    })
+                    st.session_state.processing = False
+                    return {"success": False, "error": "No generation"}
+
+            except Exception as e:
+                st.session_state.messages.append({
+                    "role": "assistant",
+                    "content": f"❌ Failed to get response: {str(e)}",
+                    "sources": [],
+                })
+                st.session_state.processing = False
+                return {"success": False, "error": str(e)}
+
+        return {"success": True, "error": None}
 
     except Exception as e:
-        status_placeholder.error(f"❌ Error: {str(e)}")
+        error_msg = str(e)
+        st.session_state.messages.append({
+            "role": "assistant",
+            "content": f"❌ Connection error: {error_msg}",
+            "sources": [],
+        })
         st.session_state.processing = False
+        return {"success": False, "error": error_msg}

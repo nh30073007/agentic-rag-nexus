@@ -20,154 +20,155 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+# ✅ Smooth dark theme — NO aggressive !important on inputs
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-
+    
     html, body, [class*="css"] {
         font-family: 'Inter', sans-serif;
-        background-color: #0d0d0d !important;
-        color: #e5e5e5 !important;
+        background-color: #0d0d0d;
+        color: #e5e5e5;
     }
-
-    /* Main background */
+    
     .main .block-container {
-        background-color: #0d0d0d !important;
+        background-color: #0d0d0d;
         padding-top: 1.5rem;
         max-width: 1400px;
     }
-
-    /* Sidebar */
+    
     [data-testid="stSidebar"] {
-        background-color: #141414 !important;
-        border-right: 1px solid #262626 !important;
+        background-color: #141414;
+        border-right: 1px solid #262626;
     }
-    [data-testid="stSidebar"] .block-container {
-        background-color: #141414 !important;
-    }
-
-    /* Headers */
+    
     h1, h2, h3, h4, h5, h6 {
-        color: #f5f5f5 !important;
-        font-weight: 600 !important;
+        color: #f5f5f5;
+        font-weight: 600;
         letter-spacing: -0.02em;
     }
-
-    /* Text colors */
-    p, li, label, .stMarkdown {
-        color: #d4d4d4 !important;
-    }
-
-    /* Chat messages */
+    
+    /* Chat messages — Kimi style */
     .stChatMessage [data-testid="stChatMessageContent"] {
-        background-color: #1a1a1a !important;
-        border: 1px solid #2a2a2a !important;
-        border-radius: 16px !important;
-        padding: 1rem 1.2rem !important;
-        color: #e5e5e5 !important;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.3) !important;
+        background-color: #1a1a1a;
+        border: 1px solid #2a2a2a;
+        border-radius: 16px;
+        padding: 1rem 1.2rem;
+        color: #e5e5e5;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+        transition: all 0.2s ease;
     }
-
-    /* User message */
+    
+    /* User message — blue tint */
     .stChatMessage[data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarUser"]) [data-testid="stChatMessageContent"] {
-        background-color: #1e3a5f !important;
-        border: 1px solid #2a4a6f !important;
+        background-color: #1e3a5f;
+        border: 1px solid #2a4a6f;
     }
-
-    /* Input */
+    
+    /* Chat input — fixed at bottom, no brightness issue */
     .stChatInputContainer {
-        background-color: #1a1a1a !important;
-        border: 1px solid #333 !important;
-        border-radius: 16px !important;
+        background-color: #1a1a1a;
+        border: 1px solid #333;
+        border-radius: 16px;
+        transition: border-color 0.2s ease;
+    }
+    .stChatInputContainer:focus-within {
+        border-color: #2563eb;
     }
     .stChatInputContainer textarea {
-        color: #e5e5e5 !important;
+        color: #e5e5e5;
     }
-
+    
     /* Buttons */
     .stButton > button {
-        background-color: #1a1a1a !important;
-        color: #e5e5e5 !important;
-        border: 1px solid #333 !important;
-        border-radius: 10px !important;
-        font-weight: 500 !important;
-        transition: all 0.2s ease !important;
+        background-color: #1a1a1a;
+        color: #e5e5e5;
+        border: 1px solid #333;
+        border-radius: 10px;
+        font-weight: 500;
+        transition: all 0.2s ease;
     }
     .stButton > button:hover {
-        background-color: #262626 !important;
-        border-color: #444 !important;
+        background-color: #262626;
+        border-color: #444;
     }
     .stButton > button[kind="primary"] {
-        background-color: #2563eb !important;
-        color: white !important;
-        border: none !important;
+        background-color: #2563eb;
+        color: white;
+        border: none;
     }
     .stButton > button[kind="primary"]:hover {
-        background-color: #1d4ed8 !important;
+        background-color: #1d4ed8;
     }
-
-    /* Expander */
-    .streamlit-expanderHeader {
-        background-color: #1a1a1a !important;
-        border: 1px solid #2a2a2a !important;
-        border-radius: 12px !important;
-        color: #e5e5e5 !important;
-    }
-    .streamlit-expanderContent {
-        background-color: #141414 !important;
-        border: 1px solid #2a2a2a !important;
-        border-top: none !important;
-        border-radius: 0 0 12px 12px !important;
-        color: #d4d4d4 !important;
-    }
-
-    /* File uploader */
+    
+    /* File uploader — smooth, no flash */
     .stFileUploader > div > div {
-        background-color: #1a1a1a !important;
-        border: 2px dashed #333 !important;
-        border-radius: 12px !important;
-        color: #a3a3a3 !important;
+        background-color: #1a1a1a;
+        border: 2px dashed #333;
+        border-radius: 12px;
+        color: #a3a3a3;
+        transition: all 0.2s ease;
     }
-
-    /* Text input */
+    .stFileUploader > div > div:hover {
+        border-color: #2563eb;
+        background-color: #1a1a1a;
+    }
+    /* Upload complete state — NO brightness drop */
+    .stFileUploader [data-testid="stFileUploaderFile"] {
+        background-color: #1a1a1a;
+        color: #e5e5e5;
+    }
+    
+    /* Inputs */
     .stTextInput > div > div > input,
     .stTextArea > div > div > textarea {
-        background-color: #1a1a1a !important;
-        border: 1px solid #333 !important;
-        border-radius: 10px !important;
-        color: #e5e5e5 !important;
+        background-color: #1a1a1a;
+        border: 1px solid #333;
+        border-radius: 10px;
+        color: #e5e5e5;
     }
-
+    .stTextInput > div > div > input:focus,
+    .stTextArea > div > div > textarea:focus {
+        border-color: #2563eb;
+    }
+    
+    /* Expander */
+    .streamlit-expanderHeader {
+        background-color: #1a1a1a;
+        border: 1px solid #2a2a2a;
+        border-radius: 12px;
+        color: #e5e5e5;
+    }
+    .streamlit-expanderContent {
+        background-color: #141414;
+        border: 1px solid #2a2a2a;
+        border-top: none;
+        border-radius: 0 0 12px 12px;
+        color: #d4d4d4;
+    }
+    
     /* Metrics */
     [data-testid="stMetric"] {
-        background-color: #1a1a1a !important;
-        border: 1px solid #2a2a2a !important;
-        border-radius: 12px !important;
+        background-color: #1a1a1a;
+        border: 1px solid #2a2a2a;
+        border-radius: 12px;
     }
-    [data-testid="stMetric"] label {
-        color: #a3a3a3 !important;
-    }
-    [data-testid="stMetric"] .css-1xarl3l {
-        color: #f5f5f5 !important;
-    }
-
+    
     /* Scrollbar */
     ::-webkit-scrollbar { width: 6px; }
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
     ::-webkit-scrollbar-thumb:hover { background: #444; }
-
+    
     /* Hide defaults */
     #MainMenu, footer, header { visibility: hidden; }
-
-    /* Divider */
-    hr {
-        border-color: #262626 !important;
-    }
-
-    /* Caption */
-    .stCaption {
-        color: #737373 !important;
+    
+    hr { border-color: #262626; }
+    .stCaption { color: #737373; }
+    
+    /* Spinner — no dimming */
+    .stSpinner > div {
+        border-color: #2563eb transparent transparent transparent;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -182,14 +183,13 @@ st.markdown("""
     </div>
 """, unsafe_allow_html=True)
 
-# ✅ ROOT LEVEL: chat_input (MUST be outside columns/tabs/expander)
+# ✅ ROOT LEVEL: chat input (must be outside columns)
 render_chat_input()
 
-# Columns for chat history + agent tracker
+# Columns
 chat_col, tracker_col = st.columns([3, 2], gap="large")
 
 with chat_col:
-    # Chat history, processing, human gate (NO chat_input here)
     render_chat_interface()
 
 with tracker_col:

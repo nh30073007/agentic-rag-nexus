@@ -1,8 +1,8 @@
-"""Sidebar component with document upload and backend status."""
+"""Sidebar component — smooth upload without brightness drop."""
 
 import streamlit as st
 
-from frontend.utils.api_client import upload_document, list_documents, API_BASE
+from frontend.utils.api_client import upload_document, list_documents
 
 
 def render_sidebar():
@@ -12,31 +12,31 @@ def render_sidebar():
             unsafe_allow_html=True,
         )
 
-        # ✅ Backend Status Check
-        backend_alive = _check_backend_status()
-        
-        if not backend_alive:
-            st.warning("🔴 Backend is sleeping")
-            if st.button("🚀 Wake Up Backend", use_container_width=True):
-                _wake_backend()
-            st.info("Click 'Wake Up' and wait 30s, then refresh")
-            st.stop()  # Don't render rest if backend down
-
-        # File Upload
+        # File Upload — NO spinner flash, smooth transition
         uploaded_file = st.file_uploader(
             "Upload PDF, DOCX, or TXT",
             type=["pdf", "docx", "txt"],
             label_visibility="collapsed",
+            key="sidebar_uploader",
         )
 
         if uploaded_file:
-            with st.spinner("Uploading..."):
-                result = upload_document(uploaded_file)
-                if result.get("error"):
-                    st.error(f"❌ {result['error']}")
-                else:
-                    st.success("✅ Uploaded!")
-                    st.rerun()
+            # Use session state to prevent re-upload on every rerun
+            upload_key = f"uploaded_{uploaded_file.name}"
+            
+            if upload_key not in st.session_state:
+                with st.container():
+                    st.info("📤 Uploading... please wait")
+                    result = upload_document(uploaded_file)
+                    
+                    if result.get("error"):
+                        st.error(f"❌ {result['error']}")
+                    else:
+                        st.success("✅ Uploaded successfully!")
+                        st.session_state[upload_key] = True
+                        st.rerun()
+            else:
+                st.success(f"✅ {uploaded_file.name} ready")
 
         # Document List
         st.markdown("---")
@@ -50,25 +50,5 @@ def render_sidebar():
         else:
             for doc in documents:
                 name = doc.get("filename", "Unknown")
-                st.markdown(f"- {name}")
-
-
-def _check_backend_status():
-    """Quick check if backend is reachable."""
-    import requests
-    try:
-        response = requests.get(
-            f"{API_BASE}/health/health",
-            timeout=5  # Short timeout for quick check
-        )
-        return response.status_code == 200
-    except Exception:
-        return False
-
-
-def _wake_backend():
-    """Open backend URL to wake it up."""
-    import webbrowser
-    wake_url = API_BASE.replace("/api/v1", "")
-    webbrowser.open(wake_url)
-    st.success("✅ Opening backend... wait 30s and refresh")
+                chunks = doc.get("chunk_count", 0)
+                st.markdown(f"- **{name}**  \n  <span style='color:#737373;font-size:0.75rem;'>{chunks} chunks</span>", unsafe_allow_html=True)
