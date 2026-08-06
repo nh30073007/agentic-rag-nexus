@@ -1,8 +1,9 @@
 """Query Analyzer Node - understands and optimizes user queries."""
 
 import json
+from typing import Any, Dict
 
-from langchain_core.messages import AIMessage, SystemMessage
+from langchain_core.messages import AIMessage
 
 from app.core.config import settings
 from app.graph.state import GraphState
@@ -15,19 +16,37 @@ def _safe_json_parse(text: str, default: dict) -> dict:
         result = json.loads(text)
         if isinstance(result, dict):
             return result
-        # If it's a list/tuple, convert or use default
-        if isinstance(result, (list, tuple)) and len(result) > 0:
-            # Try to map array to dict if possible
-            return default
+        if isinstance(result, (list, tuple)) and len(result) > 0 and isinstance(result[0], dict):
+            return result[0]
     except Exception:
         pass
     return default
 
 
+def _safe_state(state: Any) -> Dict[str, Any]:
+    """Ensure state is dict."""
+    if isinstance(state, dict):
+        return state
+    if isinstance(state, (list, tuple)) and len(state) > 0:
+        if isinstance(state[0], dict):
+            return state[0]
+    return {}
+
+
 def query_analyzer_node(state: GraphState) -> dict:
     """Analyze user query: rewrite, extract intent, identify keywords."""
-    query = state["query"]
+    # ✅ DEFENSIVE: Ensure state is dict
+    state = _safe_state(state)
+    query = state.get("query", "")
     
+    if not query:
+        return {
+            "rewritten_query": "",
+            "intent": "factual",
+            "search_keywords": [],
+            "messages": [AIMessage(content="🔍 Empty query received")],
+        }
+
     system_prompt = """You are a Query Intelligence Analyst. Your task:
 1. Rewrite the query for better document retrieval
 2. Identify the user's intent (factual, analytical, comparative, procedural)
@@ -51,10 +70,13 @@ Return ONLY a valid JSON object:
     except Exception:
         result = {}
 
-    # Ensure all required fields exist
+    rewritten = result.get("rewritten_query", query) if isinstance(result, dict) else query
+    intent = result.get("intent", "factual") if isinstance(result, dict) else "factual"
+    keywords = result.get("search_keywords", []) if isinstance(result, dict) else []
+
     return {
-        "rewritten_query": result.get("rewritten_query", query) if isinstance(result, dict) else query,
-        "intent": result.get("intent", "factual") if isinstance(result, dict) else "factual",
-        "search_keywords": result.get("search_keywords", []) if isinstance(result, dict) else [],
-        "messages": [AIMessage(content=f"🔍 Query analyzed | Intent: {result.get('intent', 'factual') if isinstance(result, dict) else 'factual'}")],
+        "rewritten_query": rewritten,
+        "intent": intent,
+        "search_keywords": keywords if isinstance(keywords, list) else [],
+        "messages": [AIMessage(content=f"🔍 Query analyzed | Intent: {intent}")],
     }

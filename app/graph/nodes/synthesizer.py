@@ -1,27 +1,46 @@
 """Synthesizer Node - generates answer from retrieved documents."""
 
+from typing import Any, Dict
+
 from langchain_core.messages import AIMessage
 
 from app.graph.state import GraphState
 from app.services.llm_service import llm_service
 
 
+def _safe_state(state: Any) -> Dict[str, Any]:
+    if isinstance(state, dict):
+        return state
+    if isinstance(state, (list, tuple)) and len(state) > 0:
+        if isinstance(state[0], dict):
+            return state[0]
+    return {}
+
+
 def synthesizer_node(state: GraphState) -> dict:
-    """
-    Generate a comprehensive answer using retrieved documents.
-    Increments loop_count each time it runs (tracks retry attempts).
-    """
-    query = state.get("rewritten_query") or state["query"]
+    """Generate a comprehensive answer using retrieved documents."""
+    # ✅ DEFENSIVE
+    state = _safe_state(state)
+    
+    query = state.get("rewritten_query") or state.get("query", "")
     docs = state.get("documents", [])
     critique_feedback = state.get("critique_feedback")
     human_feedback = state.get("human_feedback")
+    
+    # Ensure docs is list
+    if not isinstance(docs, list):
+        docs = []
     
     # Build context from retrieved documents
     context_parts = []
     sources = []
     for i, doc in enumerate(docs, 1):
-        content = doc.get("content", "")[:1200]  # Limit per doc
-        source = doc.get("metadata", {}).get("source", "unknown")
+        if isinstance(doc, dict):
+            content = doc.get("content", "")[:1200]
+            source = doc.get("metadata", {}).get("source", "unknown") if isinstance(doc.get("metadata"), dict) else "unknown"
+        else:
+            content = str(doc)[:1200]
+            source = "unknown"
         context_parts.append(f"[Document {i} | Source: {source}]\n{content}")
         sources.append(source)
     
@@ -55,10 +74,17 @@ Generate the final answer:"""
         answer = "Error generating answer. Please try again."
         confidence = 0.0
 
+    loop_count = state.get("loop_count", 0)
+    if not isinstance(loop_count, int):
+        try:
+            loop_count = int(loop_count)
+        except Exception:
+            loop_count = 0
+
     return {
         "generation": answer,
         "confidence": confidence,
         "used_sources": list(set(sources)),
-        "loop_count": state.get("loop_count", 0) + 1,  # Track iteration
-        "messages": [AIMessage(content=f"✍️ Answer synthesized (attempt #{state.get('loop_count', 0) + 1})")],
+        "loop_count": loop_count + 1,
+        "messages": [AIMessage(content=f"✍️ Answer synthesized (attempt #{loop_count + 1})")],
     }

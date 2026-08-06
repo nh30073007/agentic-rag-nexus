@@ -1,6 +1,7 @@
 """Critic Node - evaluates answer quality and detects hallucinations."""
 
 import json
+from typing import Any, Dict
 
 from langchain_core.messages import AIMessage
 
@@ -15,22 +16,42 @@ def _safe_json_parse(text: str, default: dict) -> dict:
         result = json.loads(text)
         if isinstance(result, dict):
             return result
+        if isinstance(result, (list, tuple)) and len(result) > 0 and isinstance(result[0], dict):
+            return result[0]
     except Exception:
         pass
     return default
 
 
+def _safe_state(state: Any) -> Dict[str, Any]:
+    if isinstance(state, dict):
+        return state
+    if isinstance(state, (list, tuple)) and len(state) > 0:
+        if isinstance(state[0], dict):
+            return state[0]
+    return {}
+
+
 def critic_node(state: GraphState) -> dict:
     """Critique the generated answer: score 0-10, detect hallucinations, provide feedback."""
-    query = state.get("rewritten_query") or state["query"]
+    # ✅ DEFENSIVE
+    state = _safe_state(state)
+    
+    query = state.get("rewritten_query") or state.get("query", "")
     answer = state.get("generation", "")
     docs = state.get("documents", [])
     loop_count = state.get("loop_count", 0)
     
+    if not isinstance(docs, list):
+        docs = []
+    
     # Prepare document summaries for critic
     doc_summaries = []
     for i, doc in enumerate(docs[:3], 1):
-        content = doc.get("content", "")[:800] if isinstance(doc, dict) else str(doc)[:800]
+        if isinstance(doc, dict):
+            content = doc.get("content", "")[:800]
+        else:
+            content = str(doc)[:800]
         doc_summaries.append(f"Doc {i}: {content}")
     
     docs_text = "\n\n".join(doc_summaries) if doc_summaries else "No documents available."
@@ -79,18 +100,21 @@ Provide your critique:"""
 
     if isinstance(result, dict):
         try:
-            score = float(result.get("score", 7.0))
+            raw_score = result.get("score", 7.0)
+            score = float(raw_score) if raw_score is not None else 7.0
         except (ValueError, TypeError):
             score = 7.0
-        feedback = result.get("feedback", feedback)
-        issues = result.get("issues", [])
-        is_hallucination = result.get("is_hallucination", False)
-        needs_retry = result.get("needs_retry", False)
+        feedback = str(result.get("feedback", feedback))
+        raw_issues = result.get("issues", [])
+        issues = raw_issues if isinstance(raw_issues, list) else []
+        is_hallucination = bool(result.get("is_hallucination", False))
+        needs_retry = bool(result.get("needs_retry", False))
 
     return {
         "critique_score": score,
         "critique_feedback": feedback,
-        "issues": issues if isinstance(issues, list) else [],
-        "is_hallucination": bool(is_hallucination),
-        "messages": [AIMessage(content=f"🛡️ Critic score: {score}/10 | Issues: {len(issues) if isinstance(issues, list) else 0}")],
+        "issues": issues,
+        "is_hallucination": is_hallucination,
+        "needs_retry": needs_retry,
+        "messages": [AIMessage(content=f"🛡️ Critic score: {score}/10 | Issues: {len(issues)}")],
     }
