@@ -1,34 +1,33 @@
-"""Vector store service using ChromaDB directly."""
+"""Vector store service - Render Free Tier Optimized (No heavy models)."""
 
 import os
+import uuid
 from typing import Any, Dict, List, Optional
 
 import chromadb
 from chromadb.config import Settings
-from langchain_huggingface import HuggingFaceEmbeddings
+from chromadb.utils.embedding_functions import DefaultEmbeddingFunction
 
 from app.core.config import settings
 from app.core.exceptions import VectorStoreError
 
 
 class VectorStoreService:
-    """Service for vector database operations."""
+    """Lightweight vector store - uses ChromaDB default embeddings (~20MB)."""
 
     def __init__(self):
-        self.persist_dir = settings.CHROMA_PERSIST_DIR
-        self.collection_name = settings.CHROMA_COLLECTION_NAME
-        self._embeddings = None
+        # ✅ Render-safe: /tmp path (writable ephemeral storage)
+        self.persist_dir = getattr(settings, 'CHROMA_PERSIST_DIR', '/tmp/chroma_db')
+        self.collection_name = getattr(settings, 'CHROMA_COLLECTION_NAME', 'documents')
+        
         self._client = None
+        self._embedding_fn = None
 
     def _get_embeddings(self):
-        """Lazy load embeddings model."""
-        if self._embeddings is None:
-            self._embeddings = HuggingFaceEmbeddings(
-                model_name=settings.EMBEDDING_MODEL,
-                model_kwargs={"device": "cpu"},
-                encode_kwargs={"normalize_embeddings": True},
-            )
-        return self._embeddings
+        """ChromaDB default - tiny ONNX model, no download, ~20MB RAM."""
+        if self._embedding_fn is None:
+            self._embedding_fn = DefaultEmbeddingFunction()
+        return self._embedding_fn
 
     def _get_client(self):
         """Get or create ChromaDB client."""
@@ -44,7 +43,10 @@ class VectorStoreService:
         """Get or create collection."""
         client = self._get_client()
         name = collection_name or self.collection_name
-        return client.get_or_create_collection(name=name)
+        return client.get_or_create_collection(
+            name=name,
+            embedding_function=self._get_embeddings(),
+        )
 
     def add_documents(
         self,
@@ -53,22 +55,33 @@ class VectorStoreService:
         ids: Optional[List[str]] = None,
         collection_name: Optional[str] = None,
     ) -> List[str]:
-        """Add documents to vector store."""
+        """Add documents - memory safe batching."""
         try:
+            if not texts:
+                return []
+
             collection = self._get_collection(collection_name)
-            embeddings = self._get_embeddings().embed_documents(texts)
             
             if ids is None:
-                import uuid
                 ids = [str(uuid.uuid4()) for _ in texts]
-            
-            collection.add(
-                documents=texts,
-                embeddings=embeddings,
-                metadatas=metadatas or [{} for _ in texts],
-                ids=ids,
-            )
+            if metadatas is None:
+                metadatas = [{} for _ in texts]
+
+            # ✅ Small batches to stay under 512MB
+            batch_size = 8
+            for i in range(0, len(texts), batch_size):
+                batch_texts = texts[i:i + batch_size]
+                batch_ids = ids[i:i + batch_size]
+                batch_metas = metadatas[i:i + batch_size]
+                
+                collection.add(
+                    documents=batch_texts,
+                    metadatas=batch_metas,
+                    ids=batch_ids,
+                )
+
             return ids
+            
         except Exception as e:
             raise VectorStoreError(f"Failed to add documents: {str(e)}")
 
@@ -82,23 +95,28 @@ class VectorStoreService:
         """Search similar documents."""
         try:
             collection = self._get_collection(collection_name)
-            query_embedding = self._get_embeddings().embed_query(query)
             
             results = collection.query(
-                query_embeddings=[query_embedding],
+                query_texts=[query],
                 n_results=top_k,
                 where=filter_dict,
+                include=["documents", "metadatas", "distances"],
             )
             
             output = []
-            if results["documents"] and results["documents"][0]:
-                for i in range(len(results["documents"][0])):
+            docs = results.get("documents", [[]])[0]
+            mds = results.get("metadatas", [[]])[0] if results.get("metadatas") else []
+            dists = results.get("distances", [[]])[0] if results.get("distances") else []
+            
+            if docs:
+                for i in range(len(docs)):
                     output.append({
-                        "content": results["documents"][0][i],
-                        "metadata": results["metadatas"][0][i] if results["metadatas"] else {},
-                        "score": float(results["distances"][0][i]) if results["distances"] else 0.0,
+                        "content": docs[i],
+                        "metadata": mds[i] if i < len(mds) else {},
+                        "score": float(dists[i]) if i < len(dists) else 0.0,
                     })
             return output
+            
         except Exception as e:
             raise VectorStoreError(f"Search failed: {str(e)}")
 

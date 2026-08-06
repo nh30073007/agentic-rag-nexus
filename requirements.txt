@@ -1,13 +1,24 @@
 # ============================================
-# Agentic RAG Nexus - Python 3.11
+# Agentic RAG Nexus - Backend (Python 3.11)
 # ============================================
 
-fastapi==0.115.6
-uvicorn[standard]==0.34.0
-python-multipart==0.0.20
-python-jose[cryptography]==3.3.0
-passlib[bcrypt]==1.7.4
+# --- Web Framework ---
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+python-multipart==0.0.9
+python-dotenv==1.0.1
+email-validator==2.2.0
 
+# --- Pydantic / Settings ---
+pydantic==2.10.4
+pydantic-settings==2.7.1
+
+# --- Database ---
+sqlalchemy==2.0.36
+alembic==1.14.0
+aiosqlite==0.20.0
+
+# --- LangChain / LangGraph ---
 langgraph==0.2.62
 langchain==0.3.14
 langchain-core==0.3.29
@@ -16,30 +27,24 @@ langchain-community==0.3.14
 langchain-text-splitters==0.3.5
 langsmith==0.2.10
 
+# --- Vector Store ---
 chromadb==0.6.3
 
+# --- Document Processing ---
 pypdf==5.1.0
 python-docx==1.1.2
-sentence-transformers==3.3.1
-langchain-huggingface==0.1.2
 
-sqlalchemy==2.0.36
-alembic==1.14.0
-aiosqlite==0.20.0
+# ❌ REMOVED: sentence-transformers (500MB+ memory)
+# ❌ REMOVED: langchain-huggingface
 
+# --- Cache / Session ---
 redis==5.2.1
 
-pydantic==2.10.4
-pydantic-settings==2.7.1
-email-validator==2.2.0
-
-python-dotenv==1.0.1
-tenacity==9.0.0
+# --- HTTP Client ---
 httpx==0.28.1
+requests==2.32.3
 aiofiles==24.1.0
 
-streamlit==1.41.1
-requests==2.32.3
-watchdog==6.0.0
-
+# --- Utilities ---
+tenacity==9.0.0
 structlog==24.4.0

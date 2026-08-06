@@ -16,7 +16,6 @@ from app.db.session import engine
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan events."""
-    # Startup: Create tables if not exist
     print("🚀 Creating database tables if not exist...")
     Base.metadata.create_all(bind=engine)
     
@@ -25,9 +24,17 @@ async def lifespan(app: FastAPI):
     print(f"🤖 LLM Provider: {settings.DEFAULT_LLM_PROVIDER}")
     print(f"🗄️  Database: {settings.DATABASE_URL}")
     yield
-    # Shutdown
     print("👋 Shutting down...")
 
+
+# ✅ Explicit origins for security + compatibility
+ALLOWED_ORIGINS = [
+    "https://agentic-rag-nexus.streamlit.app",
+    "http://localhost:8501",
+    "http://localhost:8000",
+    "http://localhost:3000",
+    # "*"  # ❌ Remove this in production
+]
 
 app = FastAPI(
     title=settings.APP_NAME,
@@ -38,13 +45,15 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS
+# ✅ CORS - explicit origins (credentials=True এর জন্য wildcard invalid)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"],
+    max_age=3600,
 )
 
 # Include API routes
