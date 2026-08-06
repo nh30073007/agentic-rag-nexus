@@ -1,4 +1,4 @@
-"""Vector store service — OpenAI embeddings (Render-safe, no local model)."""
+"""Vector store service — Jina AI embeddings (FREE, no API key)."""
 
 import os
 import uuid
@@ -7,19 +7,19 @@ from typing import Any, Dict, List, Optional
 import chromadb
 from chromadb.config import Settings
 
-# ✅ API-based embedding — no local model, no ONNX, no memory issue
+# ✅ Jina AI — completely free, no token needed!
 try:
-    from langchain_openai import OpenAIEmbeddings
-    OPENAI_AVAILABLE = True
+    from langchain_community.embeddings import JinaEmbeddings
+    JINA_AVAILABLE = True
 except ImportError:
-    OPENAI_AVAILABLE = False
+    JINA_AVAILABLE = False
 
 from app.core.config import settings
 from app.core.exceptions import VectorStoreError
 
 
 class VectorStoreService:
-    """OpenAI-powered vector store — zero local memory footprint."""
+    """Jina AI embeddings — zero setup, zero cost."""
 
     def __init__(self):
         self.persist_dir = getattr(settings, 'CHROMA_PERSIST_DIR', '/tmp/chroma_db')
@@ -28,26 +28,16 @@ class VectorStoreService:
         self._client = None
 
     def _get_embeddings(self):
-        """OpenAI API embeddings — tiny memory, instant load."""
         if self._embeddings is None:
-            if not OPENAI_AVAILABLE:
-                raise VectorStoreError("langchain-openai not installed. Run: pip install langchain-openai")
-            
-            api_key = os.getenv("OPENAI_API_KEY")
-            if not api_key:
-                raise VectorStoreError(
-                    "OPENAI_API_KEY not set. "
-                    "Add it to Render Environment Variables. "
-                    "Get key from: https://platform.openai.com/api-keys"
-                )
-            
-            self._embeddings = OpenAIEmbeddings(
-                model="text-embedding-3-small",  # Cheapest, best quality
-                openai_api_key=api_key,
-                # Optional: organization key if needed
-                # openai_organization=os.getenv("OPENAI_ORG_ID"),
+            if not JINA_AVAILABLE:
+                raise VectorStoreError("langchain-community not installed")
+
+            # ✅ FREE — no API key, no signup, no credit card!
+            self._embeddings = JinaEmbeddings(
+                model="jina-embeddings-v2-base-en",
+                # No api_key parameter needed!
             )
-            print("✅ OpenAI embeddings initialized")
+            print("✅ Jina AI embeddings initialized (FREE)")
         return self._embeddings
 
     def _get_client(self):
@@ -76,13 +66,11 @@ class VectorStoreService:
                 return []
 
             collection = self._get_collection(collection_name)
-            
             if ids is None:
                 ids = [str(uuid.uuid4()) for _ in texts]
             if metadatas is None:
                 metadatas = [{} for _ in texts]
 
-            # ✅ API-based embedding — no local memory pressure
             embeddings = self._get_embeddings().embed_documents(texts)
 
             collection.add(
@@ -92,7 +80,6 @@ class VectorStoreService:
                 ids=ids,
             )
             return ids
-            
         except Exception as e:
             raise VectorStoreError(f"Failed to add documents: {str(e)}")
 
@@ -127,7 +114,6 @@ class VectorStoreService:
                         "score": float(dists[i]) if i < len(dists) else 0.0,
                     })
             return output
-            
         except Exception as e:
             raise VectorStoreError(f"Search failed: {str(e)}")
 
