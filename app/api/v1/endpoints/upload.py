@@ -8,7 +8,7 @@ from typing import Optional
 from fastapi import APIRouter, File, Form, UploadFile, BackgroundTasks, HTTPException
 
 from app.services.document_service import document_service
-from app.services.vector_store_service import vectorstore_service
+from app.services.vectorstore_service import vectorstore_service
 from app.db.session import SessionLocal
 from app.db.models.document import DocumentModel
 
