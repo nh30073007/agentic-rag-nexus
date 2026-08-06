@@ -262,23 +262,37 @@ def _process_streaming_query():
 
 
 def _finalize_after_stream(status_placeholder):
-    """Get final answer from backend after stream ends."""
+    """Get final answer — bulletproof against any backend format."""
     try:
         status_placeholder.info("📡 Finalizing answer...")
 
         session_id = str(st.session_state.get("session_id", "default"))
-        status_data = get_session_status(session_id)
+        raw_status = get_session_status(session_id)
 
-        # status_data is guaranteed dict from api_client
+        # ✅ ULTRA-DEFENSIVE: Handle ANY format backend sends
+        if isinstance(raw_status, dict):
+            status_data = raw_status
+        elif isinstance(raw_status, (list, tuple)) and len(raw_status) > 0:
+            # If tuple/list, try first element
+            if isinstance(raw_status[0], dict):
+                status_data = raw_status[0]
+            else:
+                status_data = {}
+        else:
+            status_data = {}
+
+        # Extract state safely
         state = status_data.get("current_state", {}) if isinstance(status_data, dict) else {}
         if not isinstance(state, dict):
             state = {}
 
+        # Get generation
         generation = state.get("generation")
         if not generation:
             generation = st.session_state.get("pending_answer", "")
 
         human_approved = state.get("human_approved")
+        
         critique_score = state.get("critique_score")
         if critique_score is None:
             critique_score = st.session_state.get("pending_score")
@@ -287,14 +301,14 @@ def _finalize_after_stream(status_placeholder):
         if not critique_feedback:
             critique_feedback = st.session_state.get("pending_feedback", "")
 
-        # Show score if available
+        # Show score
         if critique_score is not None:
             try:
                 status_placeholder.success(f"🛡️ Critic Score: {critique_score}/10")
             except Exception:
                 pass
 
-        # Decide: show human gate or direct answer
+        # Show human gate if answer exists but not approved
         if generation and human_approved is None:
             st.session_state.pending_answer = str(generation)
             st.session_state.pending_score = int(critique_score or 0)
