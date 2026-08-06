@@ -32,6 +32,23 @@ def _safe_state(state: Any) -> Dict[str, Any]:
     return {}
 
 
+def _is_error_answer(answer: str) -> bool:
+    """Detect if synthesizer failed to produce real answer."""
+    if not answer or len(answer.strip()) < 30:
+        return True
+    error_phrases = [
+        "error generating answer",
+        "sorry, i couldn't",
+        "couldn't generate",
+        "failed to generate",
+        "i apologize, but",
+        "system error",
+        "connection error",
+    ]
+    answer_lower = answer.lower()
+    return any(phrase in answer_lower for phrase in error_phrases)
+
+
 def critic_node(state: GraphState) -> dict:
     """Critique the generated answer: score 0-10, detect hallucinations, provide feedback."""
     # ✅ DEFENSIVE
@@ -44,6 +61,19 @@ def critic_node(state: GraphState) -> dict:
     
     if not isinstance(docs, list):
         docs = []
+    
+    # ==========================================
+    # ✅ DETECT SYNTHESIZER FAILURE — force retry
+    # ==========================================
+    if _is_error_answer(answer):
+        return {
+            "critique_score": 2.0,
+            "critique_feedback": "Synthesizer failed to generate a valid answer. The LLM service may be unavailable or the prompt was too long. System should retry with shorter context.",
+            "issues": ["Synthesizer error", "No valid answer", "LLM service failure"],
+            "is_hallucination": False,
+            "needs_retry": True,
+            "messages": [AIMessage(content="🛡️ Critic: Synthesizer failed (score: 2.0) — retrying...")],
+        }
     
     # Prepare document summaries for critic
     doc_summaries = []
