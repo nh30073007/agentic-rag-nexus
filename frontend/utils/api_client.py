@@ -1,4 +1,4 @@
-"""HTTP client for FastAPI backend."""
+"""HTTP client — bulletproof."""
 
 import json
 import os
@@ -6,14 +6,7 @@ import time
 
 import requests
 
-
-# ============================================
-# Environment Config
-# ============================================
-LOCAL_URL = "http://localhost:8000/api/v1"
-PROD_URL = "https://agentic-rag-nexus.onrender.com/api/v1"
-API_BASE = os.getenv("API_BASE_URL", PROD_URL)
-
+API_BASE = os.getenv("API_BASE_URL", "https://agentic-rag-nexus.onrender.com/api/v1")
 HEALTH_TIMEOUT = 10
 DEFAULT_TIMEOUT = 30
 UPLOAD_TIMEOUT = 120
@@ -26,68 +19,48 @@ class APIError(Exception):
         self.status_code = status_code
 
 
-# ============================================
-# Low-level Request Handler
-# ============================================
 def _request(method, endpoint, timeout=DEFAULT_TIMEOUT, retries=2, **kwargs):
     url = f"{API_BASE}{endpoint}"
     last_error = None
-
     for attempt in range(1, retries + 1):
         try:
             response = requests.request(method, url, timeout=timeout, **kwargs)
             response.raise_for_status()
             return response
-
         except requests.exceptions.ConnectionError as e:
-            last_error = APIError(
-                f"Cannot connect to backend (attempt {attempt}/{retries}). "
-                "Backend may be sleeping — wait 30s and retry."
-            )
+            last_error = APIError(f"Cannot connect (attempt {attempt}/{retries}).", status_code=0)
             if attempt < retries:
                 time.sleep(5 * attempt)
-
-        except requests.exceptions.Timeout as e:
-            last_error = APIError(
-                f"Request timed out after {timeout}s (attempt {attempt}/{retries})."
-            )
+        except requests.exceptions.Timeout:
+            last_error = APIError(f"Timeout after {timeout}s.", status_code=0)
             if attempt < retries:
                 time.sleep(5 * attempt)
-
         except requests.exceptions.HTTPError as e:
-            status = e.response.status_code
-            text = e.response.text[:300]
-            raise APIError(f"Server error {status}: {text}", status_code=status)
-
+            raise APIError(f"HTTP {e.response.status_code}", status_code=e.response.status_code)
     raise last_error
 
 
-# ============================================
-# Safe JSON Parser — Handles tuple/list responses
-# ============================================
 def _safe_json(response):
-    """Parse JSON, ensure dict return. Handles tuple/list gracefully."""
+    """Parse JSON, always return dict."""
     try:
         data = response.json()
         if isinstance(data, dict):
             return data
-        elif isinstance(data, list) and len(data) > 0 and isinstance(data[0], dict):
-            return data[0]  # Take first item if list of dicts
+        elif isinstance(data, (list, tuple)) and len(data) > 0:
+            # Try first element
+            if isinstance(data[0], dict):
+                return data[0]
+            return {"raw_list": list(data), "error": "List response"}
         else:
-            return {"raw_response": data, "error": "Unexpected response format"}
+            return {"raw": str(data), "error": "Unexpected format"}
     except Exception as e:
-        return {"error": f"JSON parse failed: {str(e)}"}
+        return {"error": f"Parse failed: {str(e)}"}
 
-
-# ============================================
-# Public API Functions
-# ============================================
 
 def health_check():
     try:
-        resp = _request("GET", "/health/health", timeout=HEALTH_TIMEOUT, retries=2)
-        return _safe_json(resp)
-    except APIError as e:
+        return _safe_json(_request("GET", "/health/health", timeout=HEALTH_TIMEOUT))
+    except Exception as e:
         return {"status": "unhealthy", "detail": str(e)}
 
 
@@ -95,47 +68,35 @@ def upload_document(file, collection_name="documents"):
     files = {"file": (file.name, file.getvalue(), file.type)}
     data = {"collection_name": collection_name}
     try:
-        resp = _request("POST", "/upload/upload", files=files, data=data, timeout=UPLOAD_TIMEOUT, retries=2)
-        return _safe_json(resp)
+        return _safe_json(_request("POST", "/upload/upload", files=files, data=data, timeout=UPLOAD_TIMEOUT))
     except APIError as e:
-        return {"error": str(e), "status_code": e.status_code}
+        return {"error": str(e)}
 
 
 def list_documents():
     try:
-        resp = _request("GET", "/upload/documents", timeout=DEFAULT_TIMEOUT, retries=2)
-        return _safe_json(resp)
-    except APIError:
+        return _safe_json(_request("GET", "/upload/documents"))
+    except Exception:
         return {"documents": []}
 
 
 def create_session():
     try:
-        resp = _request("POST", "/session/create", timeout=DEFAULT_TIMEOUT, retries=2)
-        return _safe_json(resp)
-    except APIError:
-        return {"session_id": "default-session"}
-
-
-def get_session_history(session_id):
-    try:
-        resp = _request("GET", f"/session/{session_id}/history", timeout=DEFAULT_TIMEOUT, retries=2)
-        return _safe_json(resp)
-    except APIError:
-        return {"history": []}
+        return _safe_json(_request("POST", "/session/create"))
+    except Exception:
+        return {"session_id": "default"}
 
 
 def get_session_status(session_id):
-    """Get current session state — BULLETPROOF."""
+    """Get session — extra safe."""
     try:
-        resp = _request("GET", f"/chat/session/{session_id}", timeout=DEFAULT_TIMEOUT, retries=2)
+        resp = _request("GET", f"/chat/session/{session_id}")
         result = _safe_json(resp)
         
-        # Ensure we always return a dict with expected fields
         if not isinstance(result, dict):
             result = {}
         
-        # Normalize nested state if present
+        # Normalize nested state
         if "current_state" in result and isinstance(result["current_state"], dict):
             state = result["current_state"]
             return {
@@ -146,14 +107,14 @@ def get_session_status(session_id):
                 "critique_feedback": state.get("critique_feedback", ""),
             }
         return result
-        
-    except APIError:
+    except Exception as e:
         return {
             "current_state": {},
             "generation": None,
             "human_approved": None,
             "critique_score": None,
             "critique_feedback": "",
+            "error": str(e),
         }
 
 
@@ -164,20 +125,16 @@ def send_chat_stream(query, session_id, collection_name="documents"):
         "collection_name": collection_name,
     }
     url = f"{API_BASE}/chat/stream"
-
     try:
         resp = requests.post(url, json=payload, stream=True, timeout=STREAM_TIMEOUT)
         resp.raise_for_status()
         return resp
     except requests.exceptions.ConnectionError:
-        raise APIError("Backend connection failed. It may be waking up — wait 30s.")
+        raise APIError("Backend sleeping — wait 30s.")
     except requests.exceptions.Timeout:
-        raise APIError("Chat stream timed out.")
+        raise APIError("Stream timeout.")
     except requests.exceptions.HTTPError as e:
-        raise APIError(
-            f"Server error {e.response.status_code}: {e.response.text[:300]}",
-            status_code=e.response.status_code,
-        )
+        raise APIError(f"HTTP {e.response.status_code}")
 
 
 def approve_answer(session_id, decision, feedback=""):
@@ -187,7 +144,6 @@ def approve_answer(session_id, decision, feedback=""):
         "feedback": feedback,
     }
     try:
-        resp = _request("POST", "/chat/approve", json=payload, timeout=DEFAULT_TIMEOUT, retries=2)
-        return _safe_json(resp)
-    except APIError as e:
+        return _safe_json(_request("POST", "/chat/approve", json=payload))
+    except Exception as e:
         return {"error": str(e)}

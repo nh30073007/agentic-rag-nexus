@@ -1,4 +1,4 @@
-"""Kimi-style smooth chat interface with robust error handling."""
+"""Kimi-style chat — bulletproof against any backend response format."""
 
 import json
 
@@ -10,25 +10,28 @@ from frontend.utils.api_client import create_session, get_session_status, send_c
 
 
 def _safe_get(data, key, default=None):
-    """Safely get value from dict, handles non-dict gracefully."""
-    if isinstance(data, dict):
-        return data.get(key, default)
-    return default
+    """Safely get from dict. NEVER crashes."""
+    try:
+        if isinstance(data, dict):
+            return data.get(key, default)
+        return default
+    except Exception:
+        return default
 
 
 def init_chat_session():
-    """Initialize chat session state."""
+    """Initialize session state safely."""
     if "session_id" not in st.session_state:
         try:
             session = create_session()
-            # Ensure session is dict
             if isinstance(session, dict):
-                st.session_state.session_id = session.get("session_id", "default")
+                sid = session.get("session_id", "default")
             else:
-                st.session_state.session_id = "default"
+                sid = "default"
         except Exception:
-            st.session_state.session_id = "default"
+            sid = "default"
         
+        st.session_state.session_id = sid
         st.session_state.messages = []
         st.session_state.processing = False
         st.session_state.human_gate_active = False
@@ -37,6 +40,16 @@ def init_chat_session():
         st.session_state.pending_score = 0
         st.session_state.pending_feedback = ""
         st.session_state.agent_logs = []
+        st.session_state.debug_log = []  # For troubleshooting
+
+
+def _log_debug(msg):
+    """Add debug message (invisible to user, stored in session)."""
+    if "debug_log" not in st.session_state:
+        st.session_state.debug_log = []
+    st.session_state.debug_log.append(str(msg))
+    # Keep last 20 only
+    st.session_state.debug_log = st.session_state.debug_log[-20:]
 
 
 def render_chat_input():
@@ -64,7 +77,7 @@ def render_chat_input():
 
 
 def render_chat_interface():
-    """Render chat history, processing, and human gate."""
+    """Render chat with full error isolation."""
     init_chat_session()
 
     st.markdown(
@@ -72,16 +85,19 @@ def render_chat_interface():
         unsafe_allow_html=True,
     )
 
-    # Chat history
+    # Show chat history
     for msg in st.session_state.messages:
-        with st.chat_message(msg["role"]):
-            st.markdown(msg["content"])
+        with st.chat_message(msg.get("role", "assistant")):
+            st.markdown(str(msg.get("content", "")))
             if msg.get("sources"):
                 with st.expander("📚 Sources"):
-                    for src in msg["sources"]:
-                        st.caption(f"- {src.get('source', 'unknown')}")
+                    for src in msg.get("sources", []):
+                        if isinstance(src, dict):
+                            st.caption(f"- {src.get('source', 'unknown')}")
+                        else:
+                            st.caption(f"- {str(src)}")
 
-    # Processing
+    # Processing state
     if st.session_state.processing:
         with st.chat_message("assistant"):
             _process_streaming_query()
@@ -90,193 +106,230 @@ def render_chat_interface():
     if st.session_state.human_gate_active and not st.session_state.human_gate_resolved:
         with st.chat_message("assistant"):
             st.info("⏳ Waiting for your approval...")
-            render_human_gate(
-                session_id=st.session_state.session_id,
-                answer_preview=st.session_state.get("pending_answer", ""),
-                critique_score=st.session_state.get("pending_score", 0),
-                critique_feedback=st.session_state.get("pending_feedback", ""),
-            )
+            try:
+                render_human_gate(
+                    session_id=str(st.session_state.get("session_id", "default")),
+                    answer_preview=str(st.session_state.get("pending_answer", "")),
+                    critique_score=int(st.session_state.get("pending_score", 0) or 0),
+                    critique_feedback=str(st.session_state.get("pending_feedback", "")),
+                )
+            except Exception as e:
+                st.error(f"❌ Human gate error: {str(e)}")
+                st.session_state.human_gate_active = False
+                st.rerun()
 
 
 def _process_streaming_query():
-    """Process streaming chat with full error handling."""
+    """Process stream with per-line error isolation."""
     if not st.session_state.messages:
-        _finish_processing("⚠️ No messages to process.")
+        _add_assistant_message("⚠️ No messages found.")
         return
 
-    last_message = st.session_state.messages[-1]
-    if last_message.get("role") != "user":
-        _finish_processing("⚠️ Last message is not from user.")
+    last_msg = st.session_state.messages[-1]
+    if not isinstance(last_msg, dict) or last_msg.get("role") != "user":
+        _add_assistant_message("⚠️ Invalid message state.")
         return
 
-    query = last_message.get("content", "")
+    query = str(last_msg.get("content", ""))
     if not query:
-        _finish_processing("⚠️ Empty query.")
+        _add_assistant_message("⚠️ Empty question.")
         return
 
-    # Status indicator
-    status_placeholder = st.empty()
-    status_placeholder.info("🔄 Agents are working...")
-
-    # Live answer building
-    answer_placeholder = st.empty()
-    live_answer = ""
+    # Status placeholder
+    status = st.empty()
+    status.info("🔄 Connecting to agents...")
 
     try:
         response = send_chat_stream(
             query=query,
-            session_id=st.session_state.session_id,
+            session_id=str(st.session_state.get("session_id", "default")),
         )
 
         if response.status_code != 200:
-            _finish_processing(f"❌ Backend error: {response.status_code}")
+            _add_assistant_message(f"❌ Backend error: {response.status_code}")
             return
 
         human_gate_triggered = False
         last_node = ""
+        line_count = 0
 
         for line in response.iter_lines():
+            line_count += 1
             if not line:
                 continue
 
+            # Parse line with full isolation
             try:
-                line_decoded = line.decode("utf-8")
-            except Exception:
+                line_text = line.decode("utf-8", errors="ignore")
+            except Exception as e:
+                _log_debug(f"Decode error line {line_count}: {e}")
                 continue
 
-            if not line_decoded.startswith("data: "):
+            if not line_text.startswith("data: "):
                 continue
 
+            # Parse JSON
             try:
-                data = json.loads(line_decoded[6:])
-            except json.JSONDecodeError:
+                raw_data = json.loads(line_text[6:])
+            except Exception as e:
+                _log_debug(f"JSON error line {line_count}: {e} | text: {line_text[:100]}")
                 continue
 
-            # Ensure data is dict
-            if not isinstance(data, dict):
+            # Ensure dict
+            if not isinstance(raw_data, dict):
+                _log_debug(f"Non-dict line {line_count}: {type(raw_data)} | {str(raw_data)[:100]}")
                 continue
 
-            msg_type = _safe_get(data, "type")
+            msg_type = _safe_get(raw_data, "type")
 
-            # ============================================
-            # NODE UPDATE — Show each agent step
-            # ============================================
+            # ==========================================
+            # NODE UPDATE
+            # ==========================================
             if msg_type == "node_update":
-                node = _safe_get(data, "node", "")
-                msg = _safe_get(data, "message", "")
-                
-                if node and node != last_node:
-                    last_node = node
-                    status_placeholder.info(f"🔄 **{node.title()}** is working...")
+                try:
+                    node = str(_safe_get(raw_data, "node", "unknown"))
+                    msg_text = str(_safe_get(raw_data, "message", ""))
 
-                add_agent_log(node, "completed", msg)
+                    if node != last_node:
+                        last_node = node
+                        status.info(f"🔄 **{node.title()}** is working...")
 
-                node_data = _safe_get(data, "data", {})
-                # Ensure node_data is dict
-                if not isinstance(node_data, dict):
-                    node_data = {}
+                    add_agent_log(node, "completed", msg_text)
 
-                # CRITIC — Capture score & feedback
-                if node == "critic":
-                    score = node_data.get("critique_score")
-                    feedback = node_data.get("critique_feedback", "")
-                    
-                    if score is not None:
-                        st.session_state.pending_score = score
-                        st.session_state.pending_feedback = feedback
-                        status_placeholder.info(f"🛡️ **Critic Score: {score}/10**")
+                    # Extract node data safely
+                    node_data = _safe_get(raw_data, "data", {})
+                    if not isinstance(node_data, dict):
+                        node_data = {}
 
-                # SYNTHESIZER — Capture answer preview
-                if node == "synthesizer":
-                    generation = node_data.get("generation")
-                    if generation:
-                        st.session_state.pending_answer = generation
-                        live_answer = generation
-                        answer_placeholder.markdown(f"📝 *Draft: {live_answer[:200]}...*")
+                    # CRITIC
+                    if node == "critic":
+                        score = node_data.get("critique_score")
+                        feedback = str(node_data.get("critique_feedback", ""))
+                        if score is not None:
+                            try:
+                                st.session_state.pending_score = int(score)
+                                st.session_state.pending_feedback = feedback
+                                status.info(f"🛡️ **Critic Score: {score}/10**")
+                            except Exception as e:
+                                _log_debug(f"Score parse error: {e}")
 
-                # HUMAN GATE — Trigger approval
-                if node == "human_gate":
-                    human_gate_triggered = True
-                    st.session_state.human_gate_active = True
-                    st.session_state.processing = False
-                    status_placeholder.info("🛑 **Human approval required**")
-                    st.rerun()
-                    return
+                    # SYNTHESIZER
+                    if node == "synthesizer":
+                        generation = node_data.get("generation")
+                        if generation:
+                            try:
+                                gen_text = str(generation)
+                                st.session_state.pending_answer = gen_text
+                                status.info(f"📝 **Draft ready** ({len(gen_text)} chars)")
+                            except Exception as e:
+                                _log_debug(f"Generation parse error: {e}")
 
-            # ============================================
-            # STREAM COMPLETE
-            # ============================================
+                    # HUMAN GATE
+                    if node == "human_gate":
+                        human_gate_triggered = True
+                        st.session_state.human_gate_active = True
+                        st.session_state.processing = False
+                        status.info("🛑 **Human approval required**")
+                        st.rerun()
+                        return
+
+                except Exception as e:
+                    _log_debug(f"Node update error: {e}")
+                    continue
+
+            # ==========================================
+            # COMPLETE
+            # ==========================================
             elif msg_type == "complete":
-                status_placeholder.success("✅ Complete")
+                status.success("✅ Agents finished")
 
-            # ============================================
-            # STREAM ERROR
-            # ============================================
+            # ==========================================
+            # ERROR
+            # ==========================================
             elif msg_type == "error":
-                err_msg = _safe_get(data, "message", "Unknown streaming error")
-                _finish_processing(f"❌ Error: {err_msg}")
+                err_msg = str(_safe_get(raw_data, "message", "Unknown error"))
+                _add_assistant_message(f"❌ Agent error: {err_msg}")
                 return
 
-        # ============================================
-        # AFTER STREAM ENDS
-        # ============================================
+        # ==========================================
+        # AFTER STREAM — Get final answer
+        # ==========================================
         if not human_gate_triggered:
-            # Get final state from backend
-            try:
-                status_data = get_session_status(st.session_state.session_id)
-                
-                # status_data is guaranteed dict by api_client
-                state = status_data.get("current_state", {})
-                if not isinstance(state, dict):
-                    state = {}
-
-                generation = state.get("generation") or st.session_state.get("pending_answer")
-                human_approved = state.get("human_approved")
-                critique_score = state.get("critique_score") or st.session_state.get("pending_score")
-                critique_feedback = state.get("critique_feedback", "") or st.session_state.get("pending_feedback", "")
-
-                # Show critic badge if available
-                if critique_score is not None:
-                    status_placeholder.success(f"🛡️ Critic Score: {critique_score}/10")
-
-                # HUMAN GATE LOGIC: Show gate if score exists (any score, or >= 5)
-                # Backend decides when to show gate, but we handle gracefully
-                if generation and human_approved is None:
-                    # Show human gate for all scores (let user decide)
-                    st.session_state.pending_answer = generation
-                    st.session_state.pending_score = critique_score or 0
-                    st.session_state.pending_feedback = critique_feedback
-                    st.session_state.human_gate_active = True
-                    st.session_state.processing = False
-                    status_placeholder.info("🛑 Review the answer before finalizing...")
-                    st.rerun()
-                    return
-
-                # DIRECT ANSWER (already approved or no gate needed)
-                if generation:
-                    answer_placeholder.empty()
-                    st.session_state.messages.append({
-                        "role": "assistant",
-                        "content": generation,
-                        "sources": [],
-                    })
-                    st.session_state.processing = False
-                else:
-                    _finish_processing("⚠️ No answer was generated. Try uploading documents first.")
-
-            except Exception as e:
-                _finish_processing(f"❌ Failed to finalize: {str(e)}")
+            _finalize_after_stream(status)
 
     except Exception as e:
-        _finish_processing(f"❌ Connection error: {str(e)}")
+        _add_assistant_message(f"❌ Connection error: {str(e)}")
 
 
-def _finish_processing(message):
-    """Helper to end processing and show message."""
-    st.session_state.messages.append({
-        "role": "assistant",
-        "content": message,
-        "sources": [],
-    })
+def _finalize_after_stream(status_placeholder):
+    """Get final answer from backend after stream ends."""
+    try:
+        status_placeholder.info("📡 Finalizing answer...")
+
+        session_id = str(st.session_state.get("session_id", "default"))
+        status_data = get_session_status(session_id)
+
+        # status_data is guaranteed dict from api_client
+        state = status_data.get("current_state", {}) if isinstance(status_data, dict) else {}
+        if not isinstance(state, dict):
+            state = {}
+
+        generation = state.get("generation")
+        if not generation:
+            generation = st.session_state.get("pending_answer", "")
+
+        human_approved = state.get("human_approved")
+        critique_score = state.get("critique_score")
+        if critique_score is None:
+            critique_score = st.session_state.get("pending_score")
+
+        critique_feedback = state.get("critique_feedback", "")
+        if not critique_feedback:
+            critique_feedback = st.session_state.get("pending_feedback", "")
+
+        # Show score if available
+        if critique_score is not None:
+            try:
+                status_placeholder.success(f"🛡️ Critic Score: {critique_score}/10")
+            except Exception:
+                pass
+
+        # Decide: show human gate or direct answer
+        if generation and human_approved is None:
+            st.session_state.pending_answer = str(generation)
+            st.session_state.pending_score = int(critique_score or 0)
+            st.session_state.pending_feedback = str(critique_feedback)
+            st.session_state.human_gate_active = True
+            st.session_state.processing = False
+            status_placeholder.info("🛑 Review the answer before finalizing...")
+            st.rerun()
+            return
+
+        # Direct answer
+        if generation:
+            _add_assistant_message(str(generation))
+        else:
+            _add_assistant_message("⚠️ No answer generated. Try uploading documents first.")
+
+    except Exception as e:
+        _add_assistant_message(f"❌ Finalize error: {str(e)}")
+
+
+def _add_assistant_message(content):
+    """Safely add assistant message and stop processing."""
+    try:
+        st.session_state.messages.append({
+            "role": "assistant",
+            "content": str(content),
+            "sources": [],
+        })
+    except Exception as e:
+        # Absolute fallback
+        st.session_state.messages = st.session_state.messages or []
+        st.session_state.messages.append({
+            "role": "assistant",
+            "content": f"System error: {str(e)}",
+        })
+    
     st.session_state.processing = False
     st.rerun()
