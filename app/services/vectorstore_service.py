@@ -1,4 +1,4 @@
-"""Vector store service — Jina AI embeddings (FREE, no API key)."""
+"""Vector store service — Google Gemini embeddings (FREE tier)."""
 
 import os
 import uuid
@@ -7,19 +7,19 @@ from typing import Any, Dict, List, Optional
 import chromadb
 from chromadb.config import Settings
 
-# ✅ Jina AI — completely free, no token needed!
+# ✅ Google Gemini — free tier, 1500 requests/day, no credit card
 try:
-    from langchain_community.embeddings import JinaEmbeddings
-    JINA_AVAILABLE = True
+    from langchain_google_genai import GoogleGenerativeAIEmbeddings
+    GOOGLE_AVAILABLE = True
 except ImportError:
-    JINA_AVAILABLE = False
+    GOOGLE_AVAILABLE = False
 
 from app.core.config import settings
 from app.core.exceptions import VectorStoreError
 
 
 class VectorStoreService:
-    """Jina AI embeddings — zero setup, zero cost."""
+    """Google Gemini embeddings — completely free."""
 
     def __init__(self):
         self.persist_dir = getattr(settings, 'CHROMA_PERSIST_DIR', '/tmp/chroma_db')
@@ -29,15 +29,26 @@ class VectorStoreService:
 
     def _get_embeddings(self):
         if self._embeddings is None:
-            if not JINA_AVAILABLE:
-                raise VectorStoreError("langchain-community not installed")
+            if not GOOGLE_AVAILABLE:
+                raise VectorStoreError("langchain-google-genai not installed. Run: pip install langchain-google-genai")
 
-            # ✅ FREE — no API key, no signup, no credit card!
-            self._embeddings = JinaEmbeddings(
-                model="jina-embeddings-v2-base-en",
-                # No api_key parameter needed!
+            # ✅ Read from env or settings
+            api_key = os.getenv("GOOGLE_API_KEY") or getattr(settings, 'GOOGLE_API_KEY', None)
+            
+            if not api_key:
+                raise VectorStoreError(
+                    "GOOGLE_API_KEY not set.\n"
+                    "1. Go to: https://aistudio.google.com/app/apikey\n"
+                    "2. Click 'Create API key'\n"
+                    "3. Copy the key\n"
+                    "4. Add to Render: Dashboard → Environment → GOOGLE_API_KEY=AIzaSy..."
+                )
+
+            self._embeddings = GoogleGenerativeAIEmbeddings(
+                model="models/embedding-001",
+                google_api_key=api_key,
             )
-            print("✅ Jina AI embeddings initialized (FREE)")
+            print("✅ Google Gemini embeddings initialized (FREE TIER)")
         return self._embeddings
 
     def _get_client(self):
