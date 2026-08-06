@@ -1,65 +1,63 @@
-"""LLM service for interacting with different providers."""
+"""LLM Service with rate limit handling."""
 
-from typing import AsyncGenerator, Optional
+import time
+from typing import Optional
 
 from langchain_groq import ChatGroq
-from langchain_core.messages import HumanMessage, SystemMessage
-from langchain_core.language_models.chat_models import BaseChatModel
+from langchain_core.messages import SystemMessage, HumanMessage
 
 from app.core.config import settings
-from app.core.exceptions import LLMProviderError
 
 
 class LLMService:
-    """Service for LLM interactions."""
+    def __init__(self):
+        self._client = None
 
-    def __init__(self, provider: Optional[str] = None, model: Optional[str] = None):
-        self.provider = provider or settings.DEFAULT_LLM_PROVIDER
-        self.model = model or settings.DEFAULT_LLM_MODEL
-        self._client = self._get_client()
-
-    def _get_client(self) -> BaseChatModel:
-        """Initialize the LLM client based on provider."""
-        if self.provider == "groq":
-            if not settings.GROQ_API_KEY:
-                raise LLMProviderError("GROQ_API_KEY not set in environment")
-            return ChatGroq(
-                api_key=settings.GROQ_API_KEY,
-                model_name=self.model,
-                temperature=0.2,
-                max_tokens=4096,
+    def _get_client(self):
+        if self._client is None:
+            api_key = settings.GROQ_API_KEY or "dummy"
+            self._client = ChatGroq(
+                api_key=api_key,
+                model_name=settings.DEFAULT_LLM_MODEL,
+                temperature=0.3,
+                max_retries=3,  # Built-in retry
             )
-        # Add OpenAI/Ollama later if needed
-        raise LLMProviderError(f"Unsupported provider: {self.provider}")
-
-    async def chat(self, system_prompt: str, user_prompt: str) -> str:
-        """Send a chat completion request."""
-        try:
-            messages = [
-                SystemMessage(content=system_prompt),
-                HumanMessage(content=user_prompt),
-            ]
-            response = await self._client.ainvoke(messages)
-            return response.content
-        except Exception as e:
-            raise LLMProviderError(f"LLM chat failed: {str(e)}")
-
-    def chat_sync(self, system_prompt: str, user_prompt: str) -> str:
-        """Synchronous chat completion."""
-        try:
-            messages = [
-                SystemMessage(content=system_prompt),
-                HumanMessage(content=user_prompt),
-            ]
-            response = self._client.invoke(messages)
-            return response.content
-        except Exception as e:
-            raise LLMProviderError(f"LLM chat failed: {str(e)}")
-
-    def get_client(self) -> BaseChatModel:
-        """Return raw LangChain client for advanced use."""
         return self._client
 
+    def chat_sync(self, system_prompt: str, user_prompt: str, max_retries: int = 3) -> str:
+        """
+        Call LLM with rate limit retry (exponential backoff).
+        """
+        client = self._get_client()
+        messages = [
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=user_prompt),
+        ]
 
-# Singleton instance
+        for attempt in range(1, max_retries + 1):
+            try:
+                response = client.invoke(messages)
+                return response.content
+            except Exception as e:
+                error_str = str(e).lower()
+                
+                # Rate limit detected
+                if "429" in error_str or "rate limit" in error_str or "too many requests" in error_str:
+                    wait_time = attempt * 3  # 3s, 6s, 9s
+                    if attempt < max_retries:
+                        print(f"⏳ Rate limited (attempt {attempt}/{max_retries}). Waiting {wait_time}s...")
+                        time.sleep(wait_time)
+                        continue
+                
+                # Last attempt failed
+                if attempt == max_retries:
+                    raise Exception(f"LLM chat failed after {max_retries} attempts: {str(e)}")
+                
+                # Other error, retry once
+                time.sleep(1)
+
+        return "Error: All retries exhausted"
+
+
+# Singleton
 llm_service = LLMService()

@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     OLLAMA_BASE_URL: str = "http://localhost:11434"
     OLLAMA_MODEL: str = "llama3.1"
     DEFAULT_LLM_PROVIDER: str = "groq"
-    DEFAULT_LLM_MODEL: str = "llama-3.3-70b-versatile"
+    DEFAULT_LLM_MODEL: str = "llama-3.1-8b-instant"  # ✅ 10x higher rate limit than 70B
 
     # Embeddings
     EMBEDDING_MODEL: str = "sentence-transformers/all-MiniLM-L6-v2"
