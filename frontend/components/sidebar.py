@@ -1,4 +1,4 @@
-"""Sidebar — smooth upload without brightness drop."""
+"""Sidebar — mobile responsive file upload."""
 
 import streamlit as st
 
@@ -7,38 +7,40 @@ from frontend.utils.api_client import upload_document, list_documents
 
 def render_sidebar():
     with st.sidebar:
+        # Mobile-friendly header
         st.markdown(
             '<div style="font-size: 1.1rem; font-weight: 700; color: #f5f5f5; margin-bottom: 0.5rem;">📁 Documents</div>',
             unsafe_allow_html=True,
         )
 
-        # Upload
+        # ✅ Modern file uploader
         uploaded_file = st.file_uploader(
-            "Upload PDF, DOCX, or TXT",
+            "Drop PDF, DOCX, or TXT here",
             type=["pdf", "docx", "txt"],
             label_visibility="collapsed",
             key="sidebar_uploader",
+            help="Upload documents to chat with them",
         )
 
         if uploaded_file:
             upload_key = f"uploaded_{uploaded_file.name}"
             
             if upload_key not in st.session_state:
-                with st.spinner("📤 Uploading... please wait"):
+                with st.spinner("📤 Uploading..."):
                     result = upload_document(uploaded_file)
                     
                     if result.get("error"):
                         st.error(f"❌ {result['error']}")
                     else:
-                        st.success("✅ Uploaded successfully!")
+                        st.success("✅ Uploaded!")
                         st.session_state[upload_key] = True
                         st.rerun()
             else:
-                st.success(f"✅ {uploaded_file.name} ready")
+                st.success(f"✅ {uploaded_file.name}")
 
         # Document List
         st.markdown("---")
-        st.caption("📄 Uploaded Documents")
+        st.caption("📄 Your Documents")
 
         docs_data = list_documents()
         documents = docs_data.get("documents", []) if isinstance(docs_data, dict) else []
