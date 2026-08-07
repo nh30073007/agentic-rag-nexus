@@ -1,4 +1,4 @@
-"""Sidebar — mobile responsive file upload."""
+"""Sidebar — clean desktop sidebar (mobile uses expander in app.py)."""
 
 import streamlit as st
 
@@ -6,16 +6,16 @@ from frontend.utils.api_client import upload_document, list_documents
 
 
 def render_sidebar():
+    """Desktop sidebar — mobile users use the Files button instead."""
     with st.sidebar:
-        # Mobile-friendly header
         st.markdown(
             '<div style="font-size: 1.1rem; font-weight: 700; color: #f5f5f5; margin-bottom: 0.5rem;">📁 Documents</div>',
             unsafe_allow_html=True,
         )
 
-        # ✅ Modern file uploader
+        # File upload
         uploaded_file = st.file_uploader(
-            "Drop PDF, DOCX, or TXT here",
+            "Drop PDF, DOCX, or TXT",
             type=["pdf", "docx", "txt"],
             label_visibility="collapsed",
             key="sidebar_uploader",
@@ -32,7 +32,7 @@ def render_sidebar():
                     if result.get("error"):
                         st.error(f"❌ {result['error']}")
                     else:
-                        st.success("✅ Uploaded!")
+                        st.success("✅ Uploaded successfully!")
                         st.session_state[upload_key] = True
                         st.rerun()
             else:

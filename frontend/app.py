@@ -1,5 +1,5 @@
 """
-Agentic RAG Nexus — Mobile Responsive Kimi-Style UI
+Agentic RAG Nexus — Kimi-Style Mobile Responsive UI
 """
 
 import sys
@@ -17,11 +17,11 @@ st.set_page_config(
     page_title="Agentic RAG Nexus",
     page_icon="🧠",
     layout="wide",
-    initial_sidebar_state="collapsed",  # ✅ Mobile: sidebar hidden by default
+    initial_sidebar_state="collapsed",
 )
 
 # ============================================
-# MOBILE RESPONSIVE CSS
+# DARK THEME + MOBILE RESPONSIVE CSS
 # ============================================
 st.markdown("""
 <style>
@@ -35,16 +35,20 @@ st.markdown("""
     
     .main .block-container {
         background-color: #0d0d0d;
-        padding-top: 1rem;
+        padding-top: 0.5rem;
         padding-left: 1rem;
         padding-right: 1rem;
+        padding-bottom: 0;
         max-width: 1400px;
     }
     
-    /* Sidebar — mobile friendly */
+    /* Sidebar */
     [data-testid="stSidebar"] {
         background-color: #141414;
         border-right: 1px solid #262626;
+    }
+    [data-testid="stSidebar"] .block-container {
+        background-color: #141414;
     }
     
     /* Headers */
@@ -63,18 +67,17 @@ st.markdown("""
         box-shadow: 0 1px 3px rgba(0,0,0,0.3);
     }
     
-    /* User message — blue tint */
+    /* User message */
     .stChatMessage[data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarUser"]) [data-testid="stChatMessageContent"] {
         background-color: #1e3a5f;
         border: 1px solid #2a4a6f;
     }
     
-    /* Chat input — fixed at bottom */
+    /* Chat input */
     .stChatInputContainer {
         background-color: #1a1a1a;
         border: 1px solid #333;
         border-radius: 16px;
-        margin-bottom: 0.5rem;
     }
     .stChatInputContainer textarea {
         color: #e5e5e5;
@@ -99,21 +102,29 @@ st.markdown("""
         border: none;
     }
     
-    /* File uploader — modern drag & drop */
+    /* Expander — file panel */
+    .streamlit-expanderHeader {
+        background-color: #1a1a1a;
+        border: 1px solid #2a2a2a;
+        border-radius: 12px;
+        color: #e5e5e5;
+    }
+    .streamlit-expanderContent {
+        background-color: #141414;
+        border: 1px solid #2a2a2a;
+        border-top: none;
+        border-radius: 0 0 12px 12px;
+    }
+    
+    /* File uploader */
     .stFileUploader > div > div {
         background-color: #1a1a1a;
         border: 2px dashed #333;
         border-radius: 12px;
         color: #a3a3a3;
-        transition: all 0.2s ease;
     }
     .stFileUploader > div > div:hover {
         border-color: #2563eb;
-        background-color: #1a1a1a;
-    }
-    .stFileUploader [data-testid="stFileUploaderFile"] {
-        background-color: #1a1a1a;
-        color: #e5e5e5;
     }
     
     /* Inputs */
@@ -123,21 +134,6 @@ st.markdown("""
         border: 1px solid #333;
         border-radius: 10px;
         color: #e5e5e5;
-    }
-    
-    /* Expander */
-    .streamlit-expanderHeader {
-        background-color: #1a1a1a;
-        border: 1px solid #2a2a2a;
-        border-radius: 12px;
-        color: #e5e5e5;
-    }
-    
-    /* Metrics */
-    [data-testid="stMetric"] {
-        background-color: #1a1a1a;
-        border: 1px solid #2a2a2a;
-        border-radius: 12px;
     }
     
     /* Scrollbar */
@@ -150,92 +146,105 @@ st.markdown("""
     hr { border-color: #262626; }
     
     /* ==========================================
-       MOBILE RESPONSIVE — Media Queries
+       MOBILE RESPONSIVE
        ========================================== */
     @media screen and (max-width: 768px) {
-        /* Mobile: smaller padding */
         .main .block-container {
             padding-left: 0.5rem;
             padding-right: 0.5rem;
-            padding-top: 0.5rem;
         }
-        
-        /* Mobile: header smaller */
-        .header-title {
-            font-size: 1.2rem !important;
-        }
-        .header-subtitle {
-            font-size: 0.75rem !important;
-        }
-        
-        /* Mobile: chat bubbles full width */
         .stChatMessage [data-testid="stChatMessageContent"] {
             padding: 0.6rem 0.8rem;
             border-radius: 12px;
-        }
-        
-        /* Mobile: agent tracker hidden or stacked */
-        [data-testid="column"] {
-            width: 100% !important;
-        }
-        
-        /* Mobile: sidebar button visible */
-        [data-testid="stSidebarCollapsedControl"] {
-            background-color: #1a1a1a;
-            border: 1px solid #333;
-        }
-    }
-    
-    /* ==========================================
-       TABLET RESPONSIVE
-       ========================================== */
-    @media screen and (min-width: 769px) and (max-width: 1024px) {
-        .main .block-container {
-            padding-left: 1rem;
-            padding-right: 1rem;
         }
     }
 </style>
 """, unsafe_allow_html=True)
 
 # ============================================
-# MOBILE HEADER
+# HEADER
 # ============================================
 st.markdown("""
-    <div style="margin-bottom: 1rem;">
-        <div class="header-title" style="font-size: 1.4rem; font-weight: 700; color: #f5f5f5;">🧠 Agentic RAG Nexus</div>
-        <div class="header-subtitle" style="font-size: 0.8rem; color: #737373; margin-top: 0.2rem;">Multi-Agent Document Intelligence</div>
+    <div style="margin-bottom: 0.8rem;">
+        <div style="font-size: 1.4rem; font-weight: 700; color: #f5f5f5;">🧠 Agentic RAG Nexus</div>
+        <div style="font-size: 0.8rem; color: #737373;">Multi-Agent Document Intelligence</div>
     </div>
 """, unsafe_allow_html=True)
 
 # ============================================
-# MOBILE: Sidebar Toggle Button (Top Right)
+# MOBILE: Files Button (Opens expander, NOT sidebar toggle)
 # ============================================
 col1, col2 = st.columns([5, 1])
 with col2:
-    if st.button("📁 Files", use_container_width=True):
-        st.sidebar.toggle()
+    if st.button("📁 Files", use_container_width=True, key="files_btn"):
+        st.session_state.show_files = not st.session_state.get("show_files", False)
+        st.rerun()
 
 # ============================================
-# SIDEBAR — File Upload (Mobile Friendly)
+# SIDEBAR (Desktop) — Native Streamlit sidebar
 # ============================================
 render_sidebar()
+
+# ============================================
+# MOBILE FILE PANEL (Expander in main area)
+# ============================================
+if st.session_state.get("show_files", False):
+    with st.expander("📁 Upload Documents", expanded=True):
+        from frontend.utils.api_client import upload_document, list_documents
+        
+        uploaded_file = st.file_uploader(
+            "Drop PDF, DOCX, or TXT",
+            type=["pdf", "docx", "txt"],
+            label_visibility="collapsed",
+            key="mobile_uploader",
+        )
+        
+        if uploaded_file:
+            upload_key = f"uploaded_{uploaded_file.name}"
+            if upload_key not in st.session_state:
+                with st.spinner("📤 Uploading..."):
+                    result = upload_document(uploaded_file)
+                    if result.get("error"):
+                        st.error(f"❌ {result['error']}")
+                    else:
+                        st.success("✅ Uploaded!")
+                        st.session_state[upload_key] = True
+                        st.rerun()
+            else:
+                st.success(f"✅ {uploaded_file.name}")
+        
+        # Document list
+        st.markdown("---")
+        docs_data = list_documents()
+        documents = docs_data.get("documents", []) if isinstance(docs_data, dict) else []
+        
+        if not documents:
+            st.info("No documents yet")
+        else:
+            for doc in documents:
+                if isinstance(doc, dict):
+                    name = doc.get("filename", "Unknown")
+                    chunks = doc.get("chunk_count", 0)
+                    st.markdown(f"- **{name}**  \n  <span style='color:#737373;font-size:0.75rem;'>{chunks} chunks</span>", unsafe_allow_html=True)
+        
+        if st.button("❌ Close", use_container_width=True):
+            st.session_state.show_files = False
+            st.rerun()
 
 # ============================================
 # MAIN CHAT AREA
 # ============================================
 
-# ✅ ROOT LEVEL: chat input (must be outside columns)
+# ✅ ROOT LEVEL: chat input
 render_chat_input()
 
-# Responsive columns: mobile = stacked, desktop = side by side
+# Responsive columns
 chat_col, tracker_col = st.columns([3, 2], gap="large")
 
 with chat_col:
     render_chat_interface()
 
 with tracker_col:
-    # On mobile, this stacks below chat automatically
     render_agent_tracker()
 
 st.markdown("---")
