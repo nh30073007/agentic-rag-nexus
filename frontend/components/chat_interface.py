@@ -62,15 +62,14 @@ def _log_debug(msg):
 
 
 def render_chat_input():
-    """ROOT LEVEL chat input."""
-    init_chat_session()
-
+    """ROOT LEVEL chat input — called from app.py unified bar."""
+    # init_chat_session() already called by render_chat_interface()
+    
     if not st.session_state.processing and not st.session_state.human_gate_active:
         query = st.chat_input(
             "Ask a question about your documents...",
             key="chat_input_main",
         )
-
         if query and query.strip():
             st.session_state.messages.append({
                 "role": "user",
@@ -81,7 +80,7 @@ def render_chat_input():
             st.session_state.pending_answer = ""
             st.session_state.pending_score = 0
             st.session_state.pending_feedback = ""
-            clear_agent_logs()
+            # clear_agent_logs()  # Optional
             st.rerun()
 
 

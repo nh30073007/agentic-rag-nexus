@@ -1,5 +1,6 @@
 """
-Agentic RAG Nexus — Kimi-Style Mobile Responsive UI
+Agentic RAG Nexus — Kimi-Style Unified Chat UI
+Features: Day/Night Mode | Mobile Responsive | File Upload in Chat Bar
 """
 
 import sys
@@ -10,9 +11,28 @@ sys.path.append(str(Path(__file__).parent.parent))
 import streamlit as st
 
 from frontend.components.agent_tracker import render_agent_tracker
-from frontend.components.chat_interface import render_chat_interface, render_chat_input
+from frontend.components.chat_interface import render_chat_interface
 from frontend.components.sidebar import render_sidebar
+from frontend.utils.api_client import upload_document
 
+# ============================================
+# SESSION STATE INIT
+# ============================================
+if "theme" not in st.session_state:
+    st.session_state.theme = "dark"
+if "chat_input_key" not in st.session_state:
+    st.session_state.chat_input_key = 0
+if "uploaded_file_name" not in st.session_state:
+    st.session_state.uploaded_file_name = None
+
+
+def toggle_theme():
+    st.session_state.theme = "light" if st.session_state.theme == "dark" else "dark"
+
+
+# ============================================
+# PAGE CONFIG
+# ============================================
 st.set_page_config(
     page_title="Agentic RAG Nexus",
     page_icon="🧠",
@@ -21,9 +41,9 @@ st.set_page_config(
 )
 
 # ============================================
-# DARK THEME + MOBILE RESPONSIVE CSS
+# THEME CSS
 # ============================================
-st.markdown("""
+DARK_THEME = """
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
     
@@ -35,14 +55,10 @@ st.markdown("""
     
     .main .block-container {
         background-color: #0d0d0d;
-        padding-top: 0.5rem;
-        padding-left: 1rem;
-        padding-right: 1rem;
-        padding-bottom: 0;
+        padding: 1rem 1.5rem 6rem 1.5rem;
         max-width: 1400px;
     }
     
-    /* Sidebar */
     [data-testid="stSidebar"] {
         background-color: #141414;
         border-right: 1px solid #262626;
@@ -51,29 +67,70 @@ st.markdown("""
         background-color: #141414;
     }
     
-    /* Headers */
-    h1, h2, h3, h4, h5, h6 {
+    /* Header */
+    .app-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1.5rem;
+        padding-bottom: 1rem;
+        border-bottom: 1px solid #262626;
+    }
+    .app-title {
+        font-size: 1.5rem;
+        font-weight: 700;
         color: #f5f5f5;
-        font-weight: 600;
+        letter-spacing: -0.02em;
+    }
+    .app-subtitle {
+        font-size: 0.8rem;
+        color: #737373;
+        margin-top: 0.2rem;
     }
     
-    /* Chat messages — Kimi style */
+    /* Theme Toggle Button */
+    .theme-toggle {
+        background-color: #1a1a1a;
+        border: 1px solid #333;
+        border-radius: 10px;
+        padding: 0.5rem 1rem;
+        color: #e5e5e5;
+        cursor: pointer;
+        transition: all 0.2s ease;
+    }
+    .theme-toggle:hover {
+        background-color: #262626;
+        border-color: #444;
+    }
+    
+    /* Chat Messages */
     .stChatMessage [data-testid="stChatMessageContent"] {
         background-color: #1a1a1a;
         border: 1px solid #2a2a2a;
         border-radius: 16px;
-        padding: 0.8rem 1rem;
+        padding: 1rem 1.2rem;
         color: #e5e5e5;
         box-shadow: 0 1px 3px rgba(0,0,0,0.3);
     }
-    
-    /* User message */
     .stChatMessage[data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarUser"]) [data-testid="stChatMessageContent"] {
         background-color: #1e3a5f;
         border: 1px solid #2a4a6f;
     }
     
-    /* Chat input */
+    /* Chat Input Area — Unified Bar */
+    .chat-input-wrapper {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        background-color: #0d0d0d;
+        border-top: 1px solid #262626;
+        padding: 1rem 1.5rem;
+        z-index: 100;
+        max-width: 1400px;
+        margin: 0 auto;
+    }
+    
     .stChatInputContainer {
         background-color: #1a1a1a;
         border: 1px solid #333;
@@ -83,6 +140,18 @@ st.markdown("""
         color: #e5e5e5;
     }
     
+    /* File Uploader as Icon */
+    .file-upload-icon button {
+        background: transparent !important;
+        border: none !important;
+        color: #737373 !important;
+        font-size: 1.2rem !important;
+        padding: 0.5rem !important;
+    }
+    .file-upload-icon button:hover {
+        color: #e5e5e5 !important;
+    }
+    
     /* Buttons */
     .stButton > button {
         background-color: #1a1a1a;
@@ -90,11 +159,6 @@ st.markdown("""
         border: 1px solid #333;
         border-radius: 10px;
         font-weight: 500;
-        transition: all 0.2s ease;
-    }
-    .stButton > button:hover {
-        background-color: #262626;
-        border-color: #444;
     }
     .stButton > button[kind="primary"] {
         background-color: #2563eb;
@@ -102,38 +166,19 @@ st.markdown("""
         border: none;
     }
     
-    /* Expander — file panel */
+    /* Expander */
     .streamlit-expanderHeader {
         background-color: #1a1a1a;
         border: 1px solid #2a2a2a;
         border-radius: 12px;
         color: #e5e5e5;
     }
-    .streamlit-expanderContent {
-        background-color: #141414;
+    
+    /* Metrics */
+    [data-testid="stMetric"] {
+        background-color: #1a1a1a;
         border: 1px solid #2a2a2a;
-        border-top: none;
-        border-radius: 0 0 12px 12px;
-    }
-    
-    /* File uploader */
-    .stFileUploader > div > div {
-        background-color: #1a1a1a;
-        border: 2px dashed #333;
         border-radius: 12px;
-        color: #a3a3a3;
-    }
-    .stFileUploader > div > div:hover {
-        border-color: #2563eb;
-    }
-    
-    /* Inputs */
-    .stTextInput > div > div > input,
-    .stTextArea > div > div > textarea {
-        background-color: #1a1a1a;
-        border: 1px solid #333;
-        border-radius: 10px;
-        color: #e5e5e5;
     }
     
     /* Scrollbar */
@@ -145,100 +190,198 @@ st.markdown("""
     #MainMenu, footer, header { visibility: hidden; }
     hr { border-color: #262626; }
     
-    /* ==========================================
-       MOBILE RESPONSIVE
-       ========================================== */
+    /* Mobile */
     @media screen and (max-width: 768px) {
         .main .block-container {
-            padding-left: 0.5rem;
-            padding-right: 0.5rem;
+            padding: 0.5rem 0.75rem 5rem 0.75rem;
         }
-        .stChatMessage [data-testid="stChatMessageContent"] {
-            padding: 0.6rem 0.8rem;
-            border-radius: 12px;
+        .app-title { font-size: 1.2rem; }
+        .chat-input-wrapper {
+            padding: 0.75rem;
         }
     }
 </style>
-""", unsafe_allow_html=True)
+"""
+
+LIGHT_THEME = """
+<style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+    
+    html, body, [class*="css"] {
+        font-family: 'Inter', sans-serif;
+        background-color: #f8f9fa;
+        color: #1a1a1a;
+    }
+    
+    .main .block-container {
+        background-color: #f8f9fa;
+        padding: 1rem 1.5rem 6rem 1.5rem;
+        max-width: 1400px;
+    }
+    
+    [data-testid="stSidebar"] {
+        background-color: #ffffff;
+        border-right: 1px solid #e5e5e5;
+    }
+    [data-testid="stSidebar"] .block-container {
+        background-color: #ffffff;
+    }
+    
+    .app-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1.5rem;
+        padding-bottom: 1rem;
+        border-bottom: 1px solid #e5e5e5;
+    }
+    .app-title {
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: #1a1a1a;
+        letter-spacing: -0.02em;
+    }
+    .app-subtitle {
+        font-size: 0.8rem;
+        color: #666;
+        margin-top: 0.2rem;
+    }
+    
+    .theme-toggle {
+        background-color: #ffffff;
+        border: 1px solid #ddd;
+        border-radius: 10px;
+        padding: 0.5rem 1rem;
+        color: #1a1a1a;
+        cursor: pointer;
+    }
+    .theme-toggle:hover {
+        background-color: #f0f0f0;
+    }
+    
+    .stChatMessage [data-testid="stChatMessageContent"] {
+        background-color: #ffffff;
+        border: 1px solid #e5e5e5;
+        border-radius: 16px;
+        padding: 1rem 1.2rem;
+        color: #1a1a1a;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    }
+    .stChatMessage[data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarUser"]) [data-testid="stChatMessageContent"] {
+        background-color: #dbeafe;
+        border: 1px solid #bfdbfe;
+    }
+    
+    .chat-input-wrapper {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        background-color: #f8f9fa;
+        border-top: 1px solid #e5e5e5;
+        padding: 1rem 1.5rem;
+        z-index: 100;
+        max-width: 1400px;
+        margin: 0 auto;
+    }
+    
+    .stChatInputContainer {
+        background-color: #ffffff;
+        border: 1px solid #ddd;
+        border-radius: 16px;
+    }
+    .stChatInputContainer textarea {
+        color: #1a1a1a;
+    }
+    
+    .file-upload-icon button {
+        background: transparent !important;
+        border: none !important;
+        color: #666 !important;
+        font-size: 1.2rem !important;
+    }
+    .file-upload-icon button:hover {
+        color: #1a1a1a !important;
+    }
+    
+    .stButton > button {
+        background-color: #ffffff;
+        color: #1a1a1a;
+        border: 1px solid #ddd;
+    }
+    .stButton > button[kind="primary"] {
+        background-color: #2563eb;
+        color: white;
+        border: none;
+    }
+    
+    .streamlit-expanderHeader {
+        background-color: #ffffff;
+        border: 1px solid #e5e5e5;
+        border-radius: 12px;
+        color: #1a1a1a;
+    }
+    
+    [data-testid="stMetric"] {
+        background-color: #ffffff;
+        border: 1px solid #e5e5e5;
+        border-radius: 12px;
+    }
+    
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #ccc; border-radius: 3px; }
+    
+    #MainMenu, footer, header { visibility: hidden; }
+    hr { border-color: #e5e5e5; }
+    
+    @media screen and (max-width: 768px) {
+        .main .block-container {
+            padding: 0.5rem 0.75rem 5rem 0.75rem;
+        }
+        .app-title { font-size: 1.2rem; }
+        .chat-input-wrapper { padding: 0.75rem; }
+    }
+</style>
+"""
+
+# Apply theme
+if st.session_state.theme == "dark":
+    st.markdown(DARK_THEME, unsafe_allow_html=True)
+else:
+    st.markdown(LIGHT_THEME, unsafe_allow_html=True)
 
 # ============================================
 # HEADER
 # ============================================
-st.markdown("""
-    <div style="margin-bottom: 0.8rem;">
-        <div style="font-size: 1.4rem; font-weight: 700; color: #f5f5f5;">🧠 Agentic RAG Nexus</div>
-        <div style="font-size: 0.8rem; color: #737373;">Multi-Agent Document Intelligence</div>
-    </div>
-""", unsafe_allow_html=True)
-
-# ============================================
-# MOBILE: Files Button (Opens expander, NOT sidebar toggle)
-# ============================================
-col1, col2 = st.columns([5, 1])
-with col2:
-    if st.button("📁 Files", use_container_width=True, key="files_btn"):
-        st.session_state.show_files = not st.session_state.get("show_files", False)
+header_col1, header_col2 = st.columns([6, 1])
+with header_col1:
+    st.markdown(
+        f"""
+        <div class="app-header">
+            <div>
+                <div class="app-title">🧠 Agentic RAG Nexus</div>
+                <div class="app-subtitle">Multi-Agent Document Intelligence</div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+with header_col2:
+    theme_emoji = "☀️" if st.session_state.theme == "dark" else "🌙"
+    theme_label = "Light" if st.session_state.theme == "dark" else "Dark"
+    if st.button(f"{theme_emoji} {theme_label}", key="theme_toggle", use_container_width=True):
+        toggle_theme()
         st.rerun()
 
 # ============================================
-# SIDEBAR (Desktop) — Native Streamlit sidebar
+# SIDEBAR — Document List Only
 # ============================================
 render_sidebar()
 
 # ============================================
-# MOBILE FILE PANEL (Expander in main area)
+# MAIN CONTENT
 # ============================================
-if st.session_state.get("show_files", False):
-    with st.expander("📁 Upload Documents", expanded=True):
-        from frontend.utils.api_client import upload_document, list_documents
-        
-        uploaded_file = st.file_uploader(
-            "Drop PDF, DOCX, or TXT",
-            type=["pdf", "docx", "txt"],
-            label_visibility="collapsed",
-            key="mobile_uploader",
-        )
-        
-        if uploaded_file:
-            upload_key = f"uploaded_{uploaded_file.name}"
-            if upload_key not in st.session_state:
-                with st.spinner("📤 Uploading..."):
-                    result = upload_document(uploaded_file)
-                    if result.get("error"):
-                        st.error(f"❌ {result['error']}")
-                    else:
-                        st.success("✅ Uploaded!")
-                        st.session_state[upload_key] = True
-                        st.rerun()
-            else:
-                st.success(f"✅ {uploaded_file.name}")
-        
-        # Document list
-        st.markdown("---")
-        docs_data = list_documents()
-        documents = docs_data.get("documents", []) if isinstance(docs_data, dict) else []
-        
-        if not documents:
-            st.info("No documents yet")
-        else:
-            for doc in documents:
-                if isinstance(doc, dict):
-                    name = doc.get("filename", "Unknown")
-                    chunks = doc.get("chunk_count", 0)
-                    st.markdown(f"- **{name}**  \n  <span style='color:#737373;font-size:0.75rem;'>{chunks} chunks</span>", unsafe_allow_html=True)
-        
-        if st.button("❌ Close", use_container_width=True):
-            st.session_state.show_files = False
-            st.rerun()
-
-# ============================================
-# MAIN CHAT AREA
-# ============================================
-
-# ✅ ROOT LEVEL: chat input
-render_chat_input()
-
-# Responsive columns
 chat_col, tracker_col = st.columns([3, 2], gap="large")
 
 with chat_col:
@@ -246,6 +389,47 @@ with chat_col:
 
 with tracker_col:
     render_agent_tracker()
+
+# ============================================
+# UNIFIED CHAT BAR (Bottom Fixed)
+# ============================================
+st.markdown('<div class="chat-input-wrapper">', unsafe_allow_html=True)
+
+# File upload as attachment icon
+upload_col, input_col = st.columns([1, 12])
+
+with upload_col:
+    st.markdown('<div class="file-upload-icon">', unsafe_allow_html=True)
+    uploaded_file = st.file_uploader(
+        "📎",
+        type=["pdf", "docx", "txt"],
+        label_visibility="collapsed",
+        key=f"chat_upload_{st.session_state.chat_input_key}",
+    )
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    # Handle file upload immediately
+    if uploaded_file:
+        file_key = f"uploaded_{uploaded_file.name}"
+        if file_key not in st.session_state:
+            with st.spinner("📤 Uploading..."):
+                result = upload_document(uploaded_file)
+                if result.get("error"):
+                    st.error(f"❌ {result['error']}")
+                else:
+                    st.session_state[file_key] = True
+                    st.session_state.uploaded_file_name = uploaded_file.name
+                    st.session_state.chat_input_key += 1  # Reset file uploader
+                    st.rerun()
+        else:
+            st.caption(f"✅ {uploaded_file.name}")
+
+with input_col:
+    # Chat input from chat_interface module
+    from frontend.components.chat_interface import render_chat_input
+    render_chat_input()
+
+st.markdown('</div>', unsafe_allow_html=True)
 
 st.markdown("---")
 st.caption("Built with LangGraph + FastAPI + Streamlit")
