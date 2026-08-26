@@ -2,6 +2,7 @@ import streamlit as st
 import requests
 import uuid
 import html
+import os
 
 from components.sidebar import render_sidebar
 
@@ -40,6 +41,7 @@ if "theme_mode" not in st.session_state:
 # ============================================================
 
 def apply_theme_css():
+
     theme = st.session_state.get(
         "theme_mode",
         "DARK",
@@ -77,10 +79,6 @@ def apply_theme_css():
         f"""
         <style>
 
-        /* ====================================================
-           NEXUS RUNTIME THEME VARIABLES
-        ==================================================== */
-
         :root {{
             --nexus-bg: {background};
             --nexus-secondary-bg: {secondary_background};
@@ -94,11 +92,6 @@ def apply_theme_css():
             --nexus-chat-user: {chat_user};
             --nexus-hover-bg: {hover_background};
         }}
-
-
-        /* ====================================================
-           GLOBAL APP
-        ==================================================== */
 
         html,
         body,
@@ -122,15 +115,6 @@ def apply_theme_css():
             opacity: 1 !important;
         }}
 
-        [data-testid="stMainBlockContainer"] {{
-            opacity: 1 !important;
-        }}
-
-
-        /* ====================================================
-           TEXT
-        ==================================================== */
-
         h1,
         h2,
         h3,
@@ -150,11 +134,6 @@ def apply_theme_css():
             color: var(--nexus-muted) !important;
         }}
 
-
-        /* ====================================================
-           SIDEBAR
-        ==================================================== */
-
         [data-testid="stSidebar"] {{
             background-color: var(--nexus-sidebar-bg) !important;
         }}
@@ -167,17 +146,13 @@ def apply_theme_css():
             background-color: var(--nexus-sidebar-bg) !important;
         }}
 
-
-        /* ====================================================
-           BUTTONS
-        ==================================================== */
-
         .stButton > button {{
             background-color: var(--nexus-secondary-bg) !important;
             color: var(--nexus-text) !important;
             border: 1px solid var(--nexus-border) !important;
-            transition: background-color 0.15s ease,
-                        border-color 0.15s ease !important;
+            transition:
+                background-color 0.15s ease,
+                border-color 0.15s ease !important;
         }}
 
         .stButton > button:hover {{
@@ -190,11 +165,6 @@ def apply_theme_css():
             color: var(--nexus-text) !important;
         }}
 
-
-        /* ====================================================
-           TEXT INPUT / TEXT AREA
-        ==================================================== */
-
         [data-testid="stTextInput"] input,
         [data-testid="stTextArea"] textarea {{
             background-color: var(--nexus-input-bg) !important;
@@ -206,11 +176,6 @@ def apply_theme_css():
         [data-testid="stTextArea"] textarea::placeholder {{
             color: var(--nexus-muted) !important;
         }}
-
-
-        /* ====================================================
-           CHAT INPUT
-        ==================================================== */
 
         [data-testid="stChatInput"] {{
             background-color: var(--nexus-input-bg) !important;
@@ -230,11 +195,6 @@ def apply_theme_css():
             color: var(--nexus-text) !important;
         }}
 
-
-        /* ====================================================
-           FILE UPLOADER
-        ==================================================== */
-
         [data-testid="stFileUploader"] {{
             background-color: var(--nexus-secondary-bg) !important;
         }}
@@ -247,11 +207,6 @@ def apply_theme_css():
         [data-testid="stFileUploaderDropzone"] * {{
             color: var(--nexus-text) !important;
         }}
-
-
-        /* ====================================================
-           CHAT MESSAGES
-        ==================================================== */
 
         [data-testid="stChatMessage"] {{
             background-color: var(--nexus-chat-assistant) !important;
@@ -267,11 +222,6 @@ def apply_theme_css():
             color: var(--nexus-text);
         }}
 
-
-        /* ====================================================
-           EXPANDER
-        ==================================================== */
-
         [data-testid="stExpander"] {{
             background-color: var(--nexus-secondary-bg) !important;
             border-color: var(--nexus-border) !important;
@@ -281,22 +231,12 @@ def apply_theme_css():
             color: var(--nexus-text) !important;
         }}
 
-
-        /* ====================================================
-           CODE
-        ==================================================== */
-
         pre,
         code,
         [data-testid="stCodeBlock"] {{
             background-color: var(--nexus-code-bg) !important;
             color: var(--nexus-text) !important;
         }}
-
-
-        /* ====================================================
-           METRICS
-        ==================================================== */
 
         [data-testid="stMetric"] {{
             background-color: var(--nexus-secondary-bg) !important;
@@ -308,19 +248,9 @@ def apply_theme_css():
             color: var(--nexus-text) !important;
         }}
 
-
-        /* ====================================================
-           DIVIDERS
-        ==================================================== */
-
         hr {{
             border-color: var(--nexus-border) !important;
         }}
-
-
-        /* ====================================================
-           CHECKBOX
-        ==================================================== */
 
         [data-testid="stCheckbox"] {{
             color: var(--nexus-text) !important;
@@ -330,19 +260,9 @@ def apply_theme_css():
             color: var(--nexus-text) !important;
         }}
 
-
-        /* ====================================================
-           ALERTS
-        ==================================================== */
-
         [data-testid="stAlert"] {{
             border-color: var(--nexus-border) !important;
         }}
-
-
-        /* ====================================================
-           HIDE STREAMLIT BRANDING
-        ==================================================== */
 
         #MainMenu {{
             visibility: hidden !important;
@@ -352,28 +272,13 @@ def apply_theme_css():
             visibility: hidden !important;
         }}
 
-
-        /* ====================================================
-           DO NOT CREATE FULL SCREEN OVERLAY
-        ==================================================== */
-
         [data-testid="stAppViewContainer"]::before {{
             display: none !important;
         }}
 
-
-        /* ====================================================
-           HIDE STREAMLIT DEFAULT STATUS WIDGET
-        ==================================================== */
-
         [data-testid="stStatusWidget"] {{
             display: none !important;
         }}
-
-
-        /* ====================================================
-           NEXUS INFINITE LOADER
-        ==================================================== */
 
         .nexus-loader-wrap {{
             width: 100%;
@@ -430,11 +335,6 @@ def apply_theme_css():
             }}
         }}
 
-
-        /* ====================================================
-           UPLOAD LOADER
-        ==================================================== */
-
         .nexus-upload-loader {{
             display: flex;
             align-items: center;
@@ -460,11 +360,6 @@ def apply_theme_css():
             }}
         }}
 
-
-        /* ====================================================
-           SMALL STATUS TEXT
-        ==================================================== */
-
         .nexus-status {{
             text-align: center;
             font-size: 12px;
@@ -485,7 +380,20 @@ apply_theme_css()
 # API CONFIG
 # ============================================================
 
-API_BASE = "http://localhost:8000/api/v1"
+# IMPORTANT:
+# Streamlit Cloud cannot use localhost to reach your Render backend.
+#
+# Optional environment variable:
+# BACKEND_URL=https://agentic-rag-nexus.onrender.com
+#
+# If BACKEND_URL is not configured, production Render URL is used.
+
+BACKEND_URL = os.getenv(
+    "BACKEND_URL",
+    "https://agentic-rag-nexus.onrender.com",
+).rstrip("/")
+
+API_BASE = f"{BACKEND_URL}/api/v1"
 
 
 # ============================================================
@@ -501,22 +409,32 @@ def api_post(
 ):
     """POST request helper."""
 
+    url = f"{API_BASE}{endpoint}"
+
     try:
 
         if files is not None:
 
             return requests.post(
-                f"{API_BASE}{endpoint}",
+                url,
                 files=files,
                 data=data,
                 timeout=timeout,
             )
 
         return requests.post(
-            f"{API_BASE}{endpoint}",
+            url,
             json=json_data,
             timeout=timeout,
         )
+
+    except requests.exceptions.Timeout:
+
+        return None
+
+    except requests.exceptions.RequestException:
+
+        return None
 
     except Exception:
 
@@ -525,14 +443,16 @@ def api_post(
 
 def api_get(
     endpoint,
-    timeout=5,
+    timeout=10,
 ):
     """GET request helper."""
+
+    url = f"{API_BASE}{endpoint}"
 
     try:
 
         return requests.get(
-            f"{API_BASE}{endpoint}",
+            url,
             timeout=timeout,
         )
 
@@ -580,19 +500,22 @@ if st.session_state.active_conversation_id is None:
 # ============================================================
 
 def render_chat_loader(
-    text="GENERATING ANSWER..."
+    text="GENERATING ANSWER...",
 ):
 
     st.markdown(
         f"""
         <div class="nexus-loader-wrap">
             <div class="nexus-loader">
+
                 <span class="nexus-loader-dot"></span>
                 <span class="nexus-loader-dot"></span>
                 <span class="nexus-loader-dot"></span>
+
                 <span class="nexus-loader-text">
                     {html.escape(text)}
                 </span>
+
             </div>
         </div>
         """,
@@ -601,14 +524,19 @@ def render_chat_loader(
 
 
 def render_upload_loader(
-    text="PROCESSING DOCUMENT..."
+    text="PROCESSING DOCUMENT...",
 ):
 
     st.markdown(
         f"""
         <div class="nexus-upload-loader">
+
             <span class="nexus-upload-spinner"></span>
-            <span>{html.escape(text)}</span>
+
+            <span>
+                {html.escape(text)}
+            </span>
+
         </div>
         """,
         unsafe_allow_html=True,
@@ -638,7 +566,9 @@ except Exception as e:
 # HEADER
 # ============================================================
 
-st.header("AGENTIC RAG NEXUS")
+st.header(
+    "AGENTIC RAG NEXUS"
+)
 
 st.caption(
     "MULTI-AGENT DOCUMENT INTELLIGENCE"
@@ -656,7 +586,9 @@ if (
     or st.session_state.get("agent_logs")
 ):
 
-    st.subheader("AGENT PIPELINE")
+    st.subheader(
+        "AGENT PIPELINE"
+    )
 
     cols = st.columns(4)
 
@@ -1052,14 +984,23 @@ if (
     upload_placeholder.markdown(
         """
         <div class="nexus-upload-loader">
+
             <span class="nexus-upload-spinner"></span>
-            <span>PROCESSING DOCUMENT...</span>
+
+            <span>
+                PROCESSING DOCUMENT...
+            </span>
+
         </div>
         """,
         unsafe_allow_html=True,
     )
 
     try:
+
+        # ----------------------------------------------------
+        # CLEAR OLD DOCUMENTS
+        # ----------------------------------------------------
 
         if replace_old:
 
@@ -1068,27 +1009,56 @@ if (
                 json_data={
                     "collection_name": "documents",
                 },
-                timeout=10,
+                timeout=20,
             )
 
-            if (
-                clear_response is not None
-                and clear_response.status_code != 200
-            ):
+            if clear_response is None:
 
                 upload_placeholder.empty()
 
                 st.error(
-                    "FAILED TO CLEAR OLD DOCUMENTS"
+                    "FAILED TO CONNECT TO BACKEND WHILE CLEARING DOCUMENTS."
+                )
+
+                st.code(
+                    f"BACKEND: {BACKEND_URL}"
                 )
 
                 st.stop()
 
+            if clear_response.status_code != 200:
+
+                upload_placeholder.empty()
+
+                st.error(
+                    f"FAILED TO CLEAR OLD DOCUMENTS "
+                    f"(HTTP {clear_response.status_code})"
+                )
+
+                try:
+
+                    st.code(
+                        clear_response.text
+                    )
+
+                except Exception:
+
+                    pass
+
+                st.stop()
+
+
+        # ----------------------------------------------------
+        # PREPARE FILE
+        # ----------------------------------------------------
+
+        file_bytes = uploaded.getvalue()
+
         files = {
             "file": (
                 uploaded.name,
-                uploaded.getvalue(),
-                uploaded.type,
+                file_bytes,
+                uploaded.type or "application/octet-stream",
             )
         }
 
@@ -1096,18 +1066,28 @@ if (
             "collection_name": "documents",
         }
 
+
+        # ----------------------------------------------------
+        # UPLOAD TO FASTAPI
+        # ----------------------------------------------------
+
         response = api_post(
             "/upload/upload",
             files=files,
             data=data,
-            timeout=60,
+            timeout=120,
         )
 
         upload_placeholder.empty()
 
+
+        # ----------------------------------------------------
+        # SUCCESS
+        # ----------------------------------------------------
+
         if (
             response is not None
-            and response.status_code == 200
+            and response.status_code in (200, 201)
         ):
 
             st.session_state.last_upload = (
@@ -1130,11 +1110,51 @@ if (
 
             st.rerun()
 
+
+        # ----------------------------------------------------
+        # BACKEND ERROR
+        # ----------------------------------------------------
+
+        elif response is not None:
+
+            st.error(
+                f"UPLOAD FAILED "
+                f"(HTTP {response.status_code})"
+            )
+
+            try:
+
+                error_body = response.text
+
+                if error_body:
+
+                    st.code(
+                        error_body
+                    )
+
+            except Exception:
+
+                pass
+
+
+        # ----------------------------------------------------
+        # CONNECTION ERROR
+        # ----------------------------------------------------
+
         else:
 
             st.error(
-                "UPLOAD FAILED"
+                "UPLOAD FAILED: BACKEND UNREACHABLE"
             )
+
+            st.code(
+                f"Backend URL: {BACKEND_URL}"
+            )
+
+            st.info(
+                "Please verify that the Render backend is running."
+            )
+
 
     except Exception as e:
 
