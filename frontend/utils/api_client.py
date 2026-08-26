@@ -12,11 +12,17 @@ import requests
 # CONFIG
 # =========================================================
 
+DEFAULT_API_BASE = (
+    "https://agentic-rag-nexus.onrender.com/api/v1"
+)
+
 API_BASE = os.getenv(
     "API_BASE_URL",
-    "http://localhost:8000/api/v1",
+    DEFAULT_API_BASE,
 ).rstrip("/")
 
+
+print(f"🔗 Backend API: {API_BASE}")
 
 # =========================================================
 # INTERNAL REQUEST HELPER
