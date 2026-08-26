@@ -16,25 +16,36 @@ from app.db.session import engine
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan events."""
+
     print("🚀 Creating database tables if not exist...")
+
     Base.metadata.create_all(bind=engine)
-    
+
     print(f"🚀 {settings.APP_NAME} starting...")
     print(f"📡 Environment: {settings.ENVIRONMENT}")
     print(f"🤖 LLM Provider: {settings.DEFAULT_LLM_PROVIDER}")
     print(f"🗄️  Database: {settings.DATABASE_URL}")
+
     yield
+
     print("👋 Shutting down...")
 
 
-# ✅ Explicit origins for security + compatibility
+# =========================================================
+# CORS
+# =========================================================
+
 ALLOWED_ORIGINS = [
     "https://agentic-rag-nexus.streamlit.app",
     "http://localhost:8501",
     "http://localhost:8000",
     "http://localhost:3000",
-    # "*"  # ❌ Remove this in production
 ]
+
+
+# =========================================================
+# FASTAPI APPLICATION
+# =========================================================
 
 app = FastAPI(
     title=settings.APP_NAME,
@@ -45,7 +56,11 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# ✅ CORS - explicit origins (credentials=True এর জন্য wildcard invalid)
+
+# =========================================================
+# CORS MIDDLEWARE
+# =========================================================
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
@@ -56,13 +71,25 @@ app.add_middleware(
     max_age=3600,
 )
 
-# Include API routes
-app.include_router(api_router, prefix="/api/v1")
 
+# =========================================================
+# API ROUTES
+# =========================================================
+
+app.include_router(
+    api_router,
+    prefix="/api/v1",
+)
+
+
+# =========================================================
+# ROOT ENDPOINT
+# =========================================================
 
 @app.get("/")
 async def root():
     """Root endpoint."""
+
     return {
         "app": settings.APP_NAME,
         "version": "1.0.0",

@@ -1,4 +1,6 @@
-"""Sidebar — Persistent Conversation History, New Chat, Theme and Status."""
+"""
+Sidebar — Persistent Conversation History, New Chat, Theme and Status.
+"""
 
 import uuid
 from datetime import datetime
@@ -288,7 +290,7 @@ def render_conversation_item(conversation):
 
     session_id = conversation.get(
         "session_id",
-        ""
+        "",
     )
 
     title = conversation.get(
@@ -439,7 +441,6 @@ def render_sidebar():
 
     with st.sidebar:
 
-
         # ================================================
         # BRAND
         # ================================================
@@ -451,7 +452,6 @@ def render_sidebar():
         )
 
         st.divider()
-
 
         # ================================================
         # INSTANT THEME SWITCH
@@ -479,13 +479,13 @@ def render_sidebar():
 
             toggle_theme()
 
-            # Instantly re-run the app.
-            # CSS reads the new theme_mode immediately.
+            # Immediately rerun the Streamlit app.
+            # The runtime theme CSS will read the
+            # updated session_state value.
+
             st.rerun()
 
-
         st.divider()
-
 
         # ================================================
         # NEW CHAT
@@ -501,9 +501,7 @@ def render_sidebar():
 
             st.rerun()
 
-
         st.divider()
-
 
         # ================================================
         # PERSISTENT CONVERSATION HISTORY
@@ -511,9 +509,7 @@ def render_sidebar():
 
         render_conversation_history()
 
-
         st.divider()
-
 
         # ================================================
         # SYSTEM STATUS
@@ -523,8 +519,9 @@ def render_sidebar():
             "**SYSTEM STATUS**"
         )
 
-
-        # Backend health
+        # ================================================
+        # BACKEND HEALTH
+        # ================================================
 
         backend_ok = False
 
@@ -546,7 +543,6 @@ def render_sidebar():
 
             backend_ok = False
 
-
         if backend_ok:
 
             st.success(
@@ -558,7 +554,6 @@ def render_sidebar():
             st.warning(
                 "BACKEND: OFFLINE"
             )
-
 
         # ================================================
         # VECTORSTORE STATUS
@@ -598,9 +593,7 @@ def render_sidebar():
                 "VECTORSTORE: UNAVAILABLE"
             )
 
-
         st.divider()
-
 
         # ================================================
         # FOOTER

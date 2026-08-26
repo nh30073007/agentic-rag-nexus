@@ -1,4 +1,6 @@
-"""HTTP client — all backend endpoints."""
+"""
+HTTP client — all backend endpoints.
+"""
 
 import os
 from typing import Optional, List, Dict, Any
@@ -13,7 +15,7 @@ import requests
 API_BASE = os.getenv(
     "API_BASE_URL",
     "http://localhost:8000/api/v1",
-)
+).rstrip("/")
 
 
 # =========================================================
@@ -413,31 +415,116 @@ def delete_conversation(
 
 
 # =========================================================
-# HEALTH API
+# BACKEND HEALTH API
 # =========================================================
 
-def health_check() -> Optional[Dict[str, Any]]:
-    """Check if the LLM service is running."""
+def backend_health_check() -> Optional[Dict[str, Any]]:
+    """
+    Check whether the FastAPI backend is alive.
+
+    Endpoint:
+        GET /api/v1/health
+    """
+
+    try:
+
+        response = requests.get(
+            f"{API_BASE}/health",
+            timeout=10,
+        )
+
+        if response.status_code == 200:
+
+            return _get_json(response)
+
+        print(
+            "Backend health check failed:",
+            response.status_code,
+            response.text,
+        )
+
+        return None
+
+    except requests.RequestException as e:
+
+        print(
+            f"Backend health error: {e}"
+        )
+
+        return None
+
+    except Exception as e:
+
+        print(
+            f"Unexpected backend health error: {e}"
+        )
+
+        return None
+
+
+# =========================================================
+# LLM HEALTH API
+# =========================================================
+
+def llm_health_check() -> Optional[Dict[str, Any]]:
+    """
+    Check whether the configured LLM service is available.
+
+    Endpoint:
+        GET /api/v1/chat/health/llm
+    """
 
     try:
 
         response = requests.get(
             f"{API_BASE}/chat/health/llm",
-            timeout=5,
+            timeout=10,
         )
 
         if response.status_code == 200:
             return _get_json(response)
 
-        return None
-
-    except requests.RequestException:
-
-        return None
-
-    except Exception:
+        print(
+            "LLM health check failed:",
+            response.status_code,
+            response.text,
+        )
 
         return None
+
+    except requests.RequestException as e:
+
+        print(
+            f"LLM health error: {e}"
+        )
+
+        return None
+
+    except Exception as e:
+
+        print(
+            f"Unexpected LLM health error: {e}"
+        )
+
+        return None
+
+
+# =========================================================
+# BACKWARD-COMPATIBLE HEALTH API
+# =========================================================
+
+def health_check() -> Optional[Dict[str, Any]]:
+    """
+    Backward-compatible health check.
+
+    This now checks the FastAPI backend itself instead of
+    the LLM-specific endpoint.
+
+    This is intentionally kept under the original function
+    name so existing frontend code continues to work.
+    """
+
+    return backend_health_check()
 
 
 # =========================================================
