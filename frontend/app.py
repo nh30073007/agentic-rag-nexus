@@ -1,374 +1,1455 @@
-"""
-Agentic RAG Nexus — Kimi-Style UI
-Day/Night Mode | Mobile Responsive | Root-Level Chat Input
-"""
-
-import sys
-from pathlib import Path
-
-sys.path.append(str(Path(__file__).parent.parent))
-
 import streamlit as st
+import requests
+import uuid
+import html
 
-from frontend.components.agent_tracker import render_agent_tracker
-from frontend.components.chat_interface import render_chat_interface, render_chat_input
-from frontend.components.sidebar import render_sidebar
+from components.sidebar import render_sidebar
 
-# ============================================
-# THEME STATE
-# ============================================
-if "theme" not in st.session_state:
-    st.session_state.theme = "dark"
-
-
-def toggle_theme():
-    st.session_state.theme = "light" if st.session_state.theme == "dark" else "dark"
-    st.rerun()
+try:
+    from utils.api_client import (
+        chat_ask,
+        approve_answer,
+    )
+except Exception:
+    chat_ask = None
+    approve_answer = None
 
 
-# ============================================
+# ============================================================
 # PAGE CONFIG
-# ============================================
+# ============================================================
+
 st.set_page_config(
-    page_title="Agentic RAG Nexus",
-    page_icon="🧠",
+    page_title="NEXUS",
+    page_icon="🤖",
     layout="wide",
-    initial_sidebar_state="collapsed",
+    initial_sidebar_state="expanded",
 )
 
-# ============================================
-# CSS THEMES
-# ============================================
-DARK_CSS = """
-<style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-    
-    html, body, [class*="css"] {
-        font-family: 'Inter', sans-serif;
-        background-color: #0d0d0d;
-        color: #e5e5e5;
-    }
-    
-    .main .block-container {
-        background-color: #0d0d0d;
-        padding-top: 1rem;
-        padding-left: 1.5rem;
-        padding-right: 1.5rem;
-        padding-bottom: 6rem;
-        max-width: 1400px;
-    }
-    
-    [data-testid="stSidebar"] {
-        background-color: #141414;
-        border-right: 1px solid #262626;
-    }
-    [data-testid="stSidebar"] .block-container {
-        background-color: #141414;
-    }
-    
-    /* Header */
-    .app-header {
-        margin-bottom: 1.5rem;
-        padding-bottom: 1rem;
-        border-bottom: 1px solid #262626;
-    }
-    .app-title {
-        font-size: 1.5rem;
-        font-weight: 700;
-        color: #f5f5f5;
-        letter-spacing: -0.02em;
-    }
-    .app-subtitle {
-        font-size: 0.8rem;
-        color: #737373;
-        margin-top: 0.2rem;
-    }
-    
-    /* Chat Messages */
-    .stChatMessage [data-testid="stChatMessageContent"] {
-        background-color: #1a1a1a;
-        border: 1px solid #2a2a2a;
-        border-radius: 16px;
-        padding: 1rem 1.2rem;
-        color: #e5e5e5;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.3);
-    }
-    .stChatMessage[data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarUser"]) [data-testid="stChatMessageContent"] {
-        background-color: #1e3a5f;
-        border: 1px solid #2a4a6f;
-    }
-    
-    /* Chat Input — Root Level Styling */
-    .stChatInputContainer {
-        background-color: #1a1a1a;
-        border: 1px solid #333;
-        border-radius: 16px;
-        position: fixed;
-        bottom: 1rem;
-        left: 50%;
-        transform: translateX(-50%);
-        width: calc(100% - 3rem);
-        max-width: 800px;
-        z-index: 100;
-    }
-    .stChatInputContainer textarea {
-        color: #e5e5e5;
-    }
-    
-    /* Buttons */
-    .stButton > button {
-        background-color: #1a1a1a;
-        color: #e5e5e5;
-        border: 1px solid #333;
-        border-radius: 10px;
-        font-weight: 500;
-    }
-    .stButton > button:hover {
-        background-color: #262626;
-        border-color: #444;
-    }
-    .stButton > button[kind="primary"] {
-        background-color: #2563eb;
-        color: white;
-        border: none;
-    }
-    
-    /* File Uploader in Sidebar */
-    .stFileUploader > div > div {
-        background-color: #1a1a1a;
-        border: 2px dashed #333;
-        border-radius: 12px;
-        color: #a3a3a3;
-    }
-    
-    /* Inputs */
-    .stTextInput > div > div > input,
-    .stTextArea > div > div > textarea {
-        background-color: #1a1a1a;
-        border: 1px solid #333;
-        border-radius: 10px;
-        color: #e5e5e5;
-    }
-    
-    /* Expander */
-    .streamlit-expanderHeader {
-        background-color: #1a1a1a;
-        border: 1px solid #2a2a2a;
-        border-radius: 12px;
-        color: #e5e5e5;
-    }
-    
-    /* Metrics */
-    [data-testid="stMetric"] {
-        background-color: #1a1a1a;
-        border: 1px solid #2a2a2a;
-        border-radius: 12px;
-    }
-    
-    /* Scrollbar */
-    ::-webkit-scrollbar { width: 6px; }
-    ::-webkit-scrollbar-track { background: transparent; }
-    ::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
-    
-    /* Hide defaults */
-    #MainMenu, footer, header { visibility: hidden; }
-    hr { border-color: #262626; }
-    .stCaption { color: #737373; }
-    
-    /* Mobile */
-    @media screen and (max-width: 768px) {
-        .main .block-container {
-            padding-left: 0.75rem;
-            padding-right: 0.75rem;
-            padding-bottom: 5rem;
-        }
-        .app-title { font-size: 1.2rem; }
-        .stChatInputContainer {
-            width: calc(100% - 1.5rem);
-        }
-    }
-</style>
-"""
 
-LIGHT_CSS = """
-<style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-    
-    html, body, [class*="css"] {
-        font-family: 'Inter', sans-serif;
-        background-color: #f8f9fa;
-        color: #1a1a1a;
-    }
-    
-    .main .block-container {
-        background-color: #f8f9fa;
-        padding-top: 1rem;
-        padding-left: 1.5rem;
-        padding-right: 1.5rem;
-        padding-bottom: 6rem;
-        max-width: 1400px;
-    }
-    
-    [data-testid="stSidebar"] {
-        background-color: #ffffff;
-        border-right: 1px solid #e5e5e5;
-    }
-    [data-testid="stSidebar"] .block-container {
-        background-color: #ffffff;
-    }
-    
-    .app-header {
-        margin-bottom: 1.5rem;
-        padding-bottom: 1rem;
-        border-bottom: 1px solid #e5e5e5;
-    }
-    .app-title {
-        font-size: 1.5rem;
-        font-weight: 700;
-        color: #1a1a1a;
-        letter-spacing: -0.02em;
-    }
-    .app-subtitle {
-        font-size: 0.8rem;
-        color: #666;
-        margin-top: 0.2rem;
-    }
-    
-    .stChatMessage [data-testid="stChatMessageContent"] {
-        background-color: #ffffff;
-        border: 1px solid #e5e5e5;
-        border-radius: 16px;
-        padding: 1rem 1.2rem;
-        color: #1a1a1a;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-    }
-    .stChatMessage[data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarUser"]) [data-testid="stChatMessageContent"] {
-        background-color: #dbeafe;
-        border: 1px solid #bfdbfe;
-    }
-    
-    .stChatInputContainer {
-        background-color: #ffffff;
-        border: 1px solid #ddd;
-        border-radius: 16px;
-        position: fixed;
-        bottom: 1rem;
-        left: 50%;
-        transform: translateX(-50%);
-        width: calc(100% - 3rem);
-        max-width: 800px;
-        z-index: 100;
-    }
-    .stChatInputContainer textarea {
-        color: #1a1a1a;
-    }
-    
-    .stButton > button {
-        background-color: #ffffff;
-        color: #1a1a1a;
-        border: 1px solid #ddd;
-        border-radius: 10px;
-    }
-    .stButton > button[kind="primary"] {
-        background-color: #2563eb;
-        color: white;
-        border: none;
-    }
-    
-    .stFileUploader > div > div {
-        background-color: #ffffff;
-        border: 2px dashed #ddd;
-        border-radius: 12px;
-        color: #666;
-    }
-    
-    .stTextInput > div > div > input,
-    .stTextArea > div > div > textarea {
-        background-color: #ffffff;
-        border: 1px solid #ddd;
-        border-radius: 10px;
-        color: #1a1a1a;
-    }
-    
-    .streamlit-expanderHeader {
-        background-color: #ffffff;
-        border: 1px solid #e5e5e5;
-        border-radius: 12px;
-        color: #1a1a1a;
-    }
-    
-    [data-testid="stMetric"] {
-        background-color: #ffffff;
-        border: 1px solid #e5e5e5;
-        border-radius: 12px;
-    }
-    
-    ::-webkit-scrollbar { width: 6px; }
-    ::-webkit-scrollbar-track { background: transparent; }
-    ::-webkit-scrollbar-thumb { background: #ccc; border-radius: 3px; }
-    
-    #MainMenu, footer, header { visibility: hidden; }
-    hr { border-color: #e5e5e5; }
-    .stCaption { color: #666; }
-    
-    @media screen and (max-width: 768px) {
-        .main .block-container {
-            padding-left: 0.75rem;
-            padding-right: 0.75rem;
-            padding-bottom: 5rem;
-        }
-        .app-title { font-size: 1.2rem; }
-        .stChatInputContainer { width: calc(100% - 1.5rem); }
-    }
-</style>
-"""
+# ============================================================
+# THEME STATE
+# ============================================================
 
-# Apply theme
-if st.session_state.theme == "dark":
-    st.markdown(DARK_CSS, unsafe_allow_html=True)
-else:
-    st.markdown(LIGHT_CSS, unsafe_allow_html=True)
+if "theme_mode" not in st.session_state:
+    st.session_state.theme_mode = "DARK"
 
-# ============================================
-# HEADER
-# ============================================
-header_col1, header_col2 = st.columns([6, 1])
-with header_col1:
+
+# ============================================================
+# THEME CSS
+# ============================================================
+
+def apply_theme_css():
+    theme = st.session_state.get(
+        "theme_mode",
+        "DARK",
+    )
+
+    if theme == "LIGHT":
+
+        background = "#ffffff"
+        secondary_background = "#f5f5f5"
+        text = "#111111"
+        muted_text = "#666666"
+        border = "#dddddd"
+        input_background = "#ffffff"
+        code_background = "#f4f4f4"
+        sidebar_background = "#f7f7f8"
+        chat_assistant = "#f7f7f8"
+        chat_user = "#ffffff"
+        hover_background = "#eeeeee"
+
+    else:
+
+        background = "#000000"
+        secondary_background = "#111111"
+        text = "#ffffff"
+        muted_text = "#a3a3a3"
+        border = "#2a2a2a"
+        input_background = "#171717"
+        code_background = "#111111"
+        sidebar_background = "#0d0d0d"
+        chat_assistant = "#111111"
+        chat_user = "#000000"
+        hover_background = "#1c1c1c"
+
     st.markdown(
         f"""
-        <div class="app-header">
-            <div class="app-title">🧠 Agentic RAG Nexus</div>
-            <div class="app-subtitle">Multi-Agent Document Intelligence</div>
+        <style>
+
+        /* ====================================================
+           NEXUS RUNTIME THEME VARIABLES
+        ==================================================== */
+
+        :root {{
+            --nexus-bg: {background};
+            --nexus-secondary-bg: {secondary_background};
+            --nexus-text: {text};
+            --nexus-muted: {muted_text};
+            --nexus-border: {border};
+            --nexus-input-bg: {input_background};
+            --nexus-code-bg: {code_background};
+            --nexus-sidebar-bg: {sidebar_background};
+            --nexus-chat-assistant: {chat_assistant};
+            --nexus-chat-user: {chat_user};
+            --nexus-hover-bg: {hover_background};
+        }}
+
+
+        /* ====================================================
+           GLOBAL APP
+        ==================================================== */
+
+        html,
+        body,
+        [data-testid="stAppViewContainer"],
+        [data-testid="stApp"],
+        .stApp {{
+            background-color: var(--nexus-bg) !important;
+            color: var(--nexus-text) !important;
+        }}
+
+        [data-testid="stMain"] {{
+            background-color: var(--nexus-bg) !important;
+        }}
+
+        [data-testid="stMainBlockContainer"] {{
+            background-color: var(--nexus-bg) !important;
+        }}
+
+        [data-testid="stAppViewBlockContainer"] {{
+            background-color: var(--nexus-bg) !important;
+            opacity: 1 !important;
+        }}
+
+        [data-testid="stMainBlockContainer"] {{
+            opacity: 1 !important;
+        }}
+
+
+        /* ====================================================
+           TEXT
+        ==================================================== */
+
+        h1,
+        h2,
+        h3,
+        h4,
+        h5,
+        h6,
+        p,
+        span,
+        div,
+        label,
+        li {{
+            color: var(--nexus-text);
+        }}
+
+        [data-testid="stCaptionContainer"],
+        [data-testid="stCaptionContainer"] p {{
+            color: var(--nexus-muted) !important;
+        }}
+
+
+        /* ====================================================
+           SIDEBAR
+        ==================================================== */
+
+        [data-testid="stSidebar"] {{
+            background-color: var(--nexus-sidebar-bg) !important;
+        }}
+
+        [data-testid="stSidebar"] > div {{
+            background-color: var(--nexus-sidebar-bg) !important;
+        }}
+
+        [data-testid="stSidebarContent"] {{
+            background-color: var(--nexus-sidebar-bg) !important;
+        }}
+
+
+        /* ====================================================
+           BUTTONS
+        ==================================================== */
+
+        .stButton > button {{
+            background-color: var(--nexus-secondary-bg) !important;
+            color: var(--nexus-text) !important;
+            border: 1px solid var(--nexus-border) !important;
+            transition: background-color 0.15s ease,
+                        border-color 0.15s ease !important;
+        }}
+
+        .stButton > button:hover {{
+            background-color: var(--nexus-hover-bg) !important;
+            border-color: var(--nexus-muted) !important;
+            color: var(--nexus-text) !important;
+        }}
+
+        .stButton > button:focus {{
+            color: var(--nexus-text) !important;
+        }}
+
+
+        /* ====================================================
+           TEXT INPUT / TEXT AREA
+        ==================================================== */
+
+        [data-testid="stTextInput"] input,
+        [data-testid="stTextArea"] textarea {{
+            background-color: var(--nexus-input-bg) !important;
+            color: var(--nexus-text) !important;
+            border-color: var(--nexus-border) !important;
+        }}
+
+        [data-testid="stTextInput"] input::placeholder,
+        [data-testid="stTextArea"] textarea::placeholder {{
+            color: var(--nexus-muted) !important;
+        }}
+
+
+        /* ====================================================
+           CHAT INPUT
+        ==================================================== */
+
+        [data-testid="stChatInput"] {{
+            background-color: var(--nexus-input-bg) !important;
+            border-color: var(--nexus-border) !important;
+        }}
+
+        [data-testid="stChatInput"] textarea {{
+            background-color: var(--nexus-input-bg) !important;
+            color: var(--nexus-text) !important;
+        }}
+
+        [data-testid="stChatInput"] textarea::placeholder {{
+            color: var(--nexus-muted) !important;
+        }}
+
+        [data-testid="stChatInput"] button {{
+            color: var(--nexus-text) !important;
+        }}
+
+
+        /* ====================================================
+           FILE UPLOADER
+        ==================================================== */
+
+        [data-testid="stFileUploader"] {{
+            background-color: var(--nexus-secondary-bg) !important;
+        }}
+
+        [data-testid="stFileUploaderDropzone"] {{
+            background-color: var(--nexus-secondary-bg) !important;
+            border-color: var(--nexus-border) !important;
+        }}
+
+        [data-testid="stFileUploaderDropzone"] * {{
+            color: var(--nexus-text) !important;
+        }}
+
+
+        /* ====================================================
+           CHAT MESSAGES
+        ==================================================== */
+
+        [data-testid="stChatMessage"] {{
+            background-color: var(--nexus-chat-assistant) !important;
+            color: var(--nexus-text) !important;
+            transition: none !important;
+        }}
+
+        [data-testid="stChatMessageContent"] {{
+            color: var(--nexus-text) !important;
+        }}
+
+        [data-testid="stChatMessageContent"] * {{
+            color: var(--nexus-text);
+        }}
+
+
+        /* ====================================================
+           EXPANDER
+        ==================================================== */
+
+        [data-testid="stExpander"] {{
+            background-color: var(--nexus-secondary-bg) !important;
+            border-color: var(--nexus-border) !important;
+        }}
+
+        [data-testid="stExpander"] * {{
+            color: var(--nexus-text) !important;
+        }}
+
+
+        /* ====================================================
+           CODE
+        ==================================================== */
+
+        pre,
+        code,
+        [data-testid="stCodeBlock"] {{
+            background-color: var(--nexus-code-bg) !important;
+            color: var(--nexus-text) !important;
+        }}
+
+
+        /* ====================================================
+           METRICS
+        ==================================================== */
+
+        [data-testid="stMetric"] {{
+            background-color: var(--nexus-secondary-bg) !important;
+            border-color: var(--nexus-border) !important;
+        }}
+
+        [data-testid="stMetricValue"],
+        [data-testid="stMetricLabel"] {{
+            color: var(--nexus-text) !important;
+        }}
+
+
+        /* ====================================================
+           DIVIDERS
+        ==================================================== */
+
+        hr {{
+            border-color: var(--nexus-border) !important;
+        }}
+
+
+        /* ====================================================
+           CHECKBOX
+        ==================================================== */
+
+        [data-testid="stCheckbox"] {{
+            color: var(--nexus-text) !important;
+        }}
+
+        [data-testid="stCheckbox"] label {{
+            color: var(--nexus-text) !important;
+        }}
+
+
+        /* ====================================================
+           ALERTS
+        ==================================================== */
+
+        [data-testid="stAlert"] {{
+            border-color: var(--nexus-border) !important;
+        }}
+
+
+        /* ====================================================
+           HIDE STREAMLIT BRANDING
+        ==================================================== */
+
+        #MainMenu {{
+            visibility: hidden !important;
+        }}
+
+        footer {{
+            visibility: hidden !important;
+        }}
+
+
+        /* ====================================================
+           DO NOT CREATE FULL SCREEN OVERLAY
+        ==================================================== */
+
+        [data-testid="stAppViewContainer"]::before {{
+            display: none !important;
+        }}
+
+
+        /* ====================================================
+           HIDE STREAMLIT DEFAULT STATUS WIDGET
+        ==================================================== */
+
+        [data-testid="stStatusWidget"] {{
+            display: none !important;
+        }}
+
+
+        /* ====================================================
+           NEXUS INFINITE LOADER
+        ==================================================== */
+
+        .nexus-loader-wrap {{
+            width: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 18px 0 24px 0;
+            color: var(--nexus-text);
+        }}
+
+        .nexus-loader {{
+            display: flex;
+            align-items: center;
+            gap: 7px;
+        }}
+
+        .nexus-loader-dot {{
+            width: 9px;
+            height: 9px;
+            border-radius: 50%;
+            background: currentColor;
+            animation: nexus-pulse 1.25s infinite ease-in-out;
+        }}
+
+        .nexus-loader-dot:nth-child(1) {{
+            animation-delay: 0s;
+        }}
+
+        .nexus-loader-dot:nth-child(2) {{
+            animation-delay: 0.15s;
+        }}
+
+        .nexus-loader-dot:nth-child(3) {{
+            animation-delay: 0.30s;
+        }}
+
+        .nexus-loader-text {{
+            margin-left: 8px;
+            font-size: 13px;
+            font-weight: 600;
+            letter-spacing: 0.3px;
+            opacity: 0.75;
+        }}
+
+        @keyframes nexus-pulse {{
+            0%, 70%, 100% {{
+                transform: scale(0.65);
+                opacity: 0.35;
+            }}
+
+            35% {{
+                transform: scale(1.0);
+                opacity: 1;
+            }}
+        }}
+
+
+        /* ====================================================
+           UPLOAD LOADER
+        ==================================================== */
+
+        .nexus-upload-loader {{
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 12px 0;
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--nexus-text);
+        }}
+
+        .nexus-upload-spinner {{
+            width: 16px;
+            height: 16px;
+            border: 2px solid var(--nexus-border);
+            border-top-color: currentColor;
+            border-radius: 50%;
+            animation: nexus-spin 0.8s linear infinite;
+        }}
+
+        @keyframes nexus-spin {{
+            to {{
+                transform: rotate(360deg);
+            }}
+        }}
+
+
+        /* ====================================================
+           SMALL STATUS TEXT
+        ==================================================== */
+
+        .nexus-status {{
+            text-align: center;
+            font-size: 12px;
+            color: var(--nexus-muted);
+            padding: 5px 0 10px 0;
+        }}
+
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+apply_theme_css()
+
+
+# ============================================================
+# API CONFIG
+# ============================================================
+
+API_BASE = "http://localhost:8000/api/v1"
+
+
+# ============================================================
+# API HELPERS
+# ============================================================
+
+def api_post(
+    endpoint,
+    json_data=None,
+    files=None,
+    data=None,
+    timeout=130,
+):
+    """POST request helper."""
+
+    try:
+
+        if files is not None:
+
+            return requests.post(
+                f"{API_BASE}{endpoint}",
+                files=files,
+                data=data,
+                timeout=timeout,
+            )
+
+        return requests.post(
+            f"{API_BASE}{endpoint}",
+            json=json_data,
+            timeout=timeout,
+        )
+
+    except Exception:
+
+        return None
+
+
+def api_get(
+    endpoint,
+    timeout=5,
+):
+    """GET request helper."""
+
+    try:
+
+        return requests.get(
+            f"{API_BASE}{endpoint}",
+            timeout=timeout,
+        )
+
+    except Exception:
+
+        return None
+
+
+# ============================================================
+# SESSION STATE
+# ============================================================
+
+defaults = {
+    "messages": [],
+    "processing": False,
+    "session_id": f"sess_{uuid.uuid4().hex}",
+    "active_conversation_id": None,
+    "current_conversation_title": "New Chat",
+    "last_upload": None,
+    "doc_count": 0,
+    "agent_logs": [],
+    "human_gate_active": False,
+    "human_gate_resolved": False,
+    "pending_answer": "",
+    "pending_score": 0,
+    "pending_feedback": "",
+}
+
+for key, value in defaults.items():
+
+    if key not in st.session_state:
+
+        st.session_state[key] = value
+
+
+if st.session_state.active_conversation_id is None:
+
+    st.session_state.active_conversation_id = (
+        st.session_state.session_id
+    )
+
+
+# ============================================================
+# CUSTOM LOADERS
+# ============================================================
+
+def render_chat_loader(
+    text="GENERATING ANSWER..."
+):
+
+    st.markdown(
+        f"""
+        <div class="nexus-loader-wrap">
+            <div class="nexus-loader">
+                <span class="nexus-loader-dot"></span>
+                <span class="nexus-loader-dot"></span>
+                <span class="nexus-loader-dot"></span>
+                <span class="nexus-loader-text">
+                    {html.escape(text)}
+                </span>
+            </div>
         </div>
         """,
         unsafe_allow_html=True,
     )
-with header_col2:
-    emoji = "☀️" if st.session_state.theme == "dark" else "🌙"
-    label = "Light" if st.session_state.theme == "dark" else "Dark"
-    if st.button(f"{emoji} {label}", key="theme_btn", use_container_width=True):
-        toggle_theme()
 
-# ============================================
-# SIDEBAR — File Upload + Document List
-# ============================================
-render_sidebar()
 
-# ============================================
-# MAIN CONTENT — Chat + Agent Tracker
-# ============================================
-chat_col, tracker_col = st.columns([3, 2], gap="large")
+def render_upload_loader(
+    text="PROCESSING DOCUMENT..."
+):
 
-with chat_col:
-    render_chat_interface()
+    st.markdown(
+        f"""
+        <div class="nexus-upload-loader">
+            <span class="nexus-upload-spinner"></span>
+            <span>{html.escape(text)}</span>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
-with tracker_col:
-    render_agent_tracker()
 
-# ============================================
-# ✅ ROOT LEVEL: Chat Input (NO columns, NO containers!)
-# ============================================
-render_chat_input()
+# ============================================================
+# SIDEBAR
+# ============================================================
 
-st.markdown("---")
-st.caption("Built with LangGraph + FastAPI + Streamlit")
+try:
+
+    render_sidebar()
+
+except Exception as e:
+
+    with st.sidebar:
+
+        st.error(
+            f"SIDEBAR ERROR: {e}"
+        )
+
+        st.title("NEXUS")
+
+
+# ============================================================
+# HEADER
+# ============================================================
+
+st.header("AGENTIC RAG NEXUS")
+
+st.caption(
+    "MULTI-AGENT DOCUMENT INTELLIGENCE"
+)
+
+st.divider()
+
+
+# ============================================================
+# AGENT PIPELINE
+# ============================================================
+
+if (
+    st.session_state.processing
+    or st.session_state.get("agent_logs")
+):
+
+    st.subheader("AGENT PIPELINE")
+
+    cols = st.columns(4)
+
+    agents = [
+        ("ANALYZER", "WAIT"),
+        ("RETRIEVER", "WAIT"),
+        ("SYNTHESIZER", "WAIT"),
+        ("CRITIC", "WAIT"),
+    ]
+
+    for log in st.session_state.get(
+        "agent_logs",
+        [],
+    ):
+
+        log_agent = (
+            log.get(
+                "agent",
+                "",
+            )
+            .upper()
+        )
+
+        for i, (
+            name,
+            _,
+        ) in enumerate(agents):
+
+            if log_agent == name:
+
+                agents[i] = (
+                    name,
+                    log.get(
+                        "status",
+                        "WAIT",
+                    ).upper(),
+                )
+
+    for col, (
+        name,
+        status,
+    ) in zip(
+        cols,
+        agents,
+    ):
+
+        col.metric(
+            name,
+            status,
+        )
+
+    st.divider()
+
+
+# ============================================================
+# HUMAN QUALITY GATE
+# ============================================================
+
+if st.session_state.get(
+    "human_gate_active"
+):
+
+    st.subheader(
+        "QUALITY REVIEW GATE"
+    )
+
+    score = st.session_state.get(
+        "pending_score",
+        0,
+    )
+
+    answer = st.session_state.get(
+        "pending_answer",
+        "",
+    )
+
+    c1, c2 = st.columns(2)
+
+    c1.metric(
+        "SCORE",
+        f"{score}/10",
+    )
+
+    if score >= 8:
+
+        quality = "EXCELLENT"
+
+    elif score >= 6:
+
+        quality = "ACCEPTABLE"
+
+    else:
+
+        quality = "NEEDS WORK"
+
+    c2.metric(
+        "STATUS",
+        quality,
+    )
+
+    with st.expander(
+        "REVIEW ANSWER",
+        expanded=True,
+    ):
+
+        st.write(answer)
+
+    feedback = st.text_area(
+        "YOUR FEEDBACK",
+        key="gate_fb",
+    )
+
+    b1, b2 = st.columns(2)
+
+
+    # --------------------------------------------------------
+    # APPROVE
+    # --------------------------------------------------------
+
+    with b1:
+
+        if st.button(
+            "APPROVE",
+            use_container_width=True,
+            key="approve_answer_btn",
+        ):
+
+            final_answer = answer
+
+            try:
+
+                if approve_answer:
+
+                    result = approve_answer(
+                        session_id=(
+                            st.session_state.session_id
+                        ),
+                        decision="approved",
+                        feedback=feedback,
+                    )
+
+                    if result:
+
+                        final_answer = result.get(
+                            "final_answer",
+                            answer,
+                        )
+
+                else:
+
+                    result = api_post(
+                        "/chat/approve",
+                        json_data={
+                            "session_id": (
+                                st.session_state.session_id
+                            ),
+                            "decision": "approved",
+                            "feedback": feedback,
+                        },
+                    )
+
+                    if (
+                        result is not None
+                        and result.status_code == 200
+                    ):
+
+                        try:
+
+                            final_answer = (
+                                result.json().get(
+                                    "final_answer",
+                                    answer,
+                                )
+                            )
+
+                        except Exception:
+
+                            final_answer = answer
+
+            except Exception:
+
+                final_answer = answer
+
+            st.session_state.messages.append(
+                {
+                    "role": "assistant",
+                    "content": final_answer,
+                    "critique_score": score,
+                }
+            )
+
+            st.session_state.human_gate_active = False
+
+            st.session_state.human_gate_resolved = True
+
+            st.session_state.processing = False
+
+            st.rerun()
+
+
+    # --------------------------------------------------------
+    # REJECT
+    # --------------------------------------------------------
+
+    with b2:
+
+        if st.button(
+            "REJECT",
+            use_container_width=True,
+            key="reject_answer_btn",
+        ):
+
+            if not feedback.strip():
+
+                st.warning(
+                    "FEEDBACK REQUIRED"
+                )
+
+            else:
+
+                try:
+
+                    if approve_answer:
+
+                        approve_answer(
+                            session_id=(
+                                st.session_state.session_id
+                            ),
+                            decision="rejected",
+                            feedback=feedback,
+                        )
+
+                    else:
+
+                        api_post(
+                            "/chat/approve",
+                            json_data={
+                                "session_id": (
+                                    st.session_state.session_id
+                                ),
+                                "decision": "rejected",
+                                "feedback": feedback,
+                            },
+                        )
+
+                except Exception:
+
+                    pass
+
+                st.session_state.human_gate_active = False
+
+                st.session_state.human_gate_resolved = False
+
+                st.session_state.processing = True
+
+                st.rerun()
+
+    st.divider()
+
+
+# ============================================================
+# CHAT HISTORY
+# ============================================================
+
+chat_box = st.container()
+
+with chat_box:
+
+    for msg in st.session_state.messages:
+
+        role = msg.get(
+            "role",
+            "",
+        )
+
+        content = msg.get(
+            "content",
+            "",
+        )
+
+        if role == "user":
+
+            with st.chat_message("user"):
+
+                st.markdown(content)
+
+        elif role == "assistant":
+
+            with st.chat_message("assistant"):
+
+                st.markdown(content)
+
+                score = msg.get(
+                    "critique_score"
+                )
+
+                if score is not None:
+
+                    st.caption(
+                        f"QUALITY: {score}/10"
+                    )
+
+                sources = msg.get(
+                    "sources",
+                    [],
+                )
+
+                if sources:
+
+                    source_text = ", ".join(
+                        str(x)
+                        for x in sources[:3]
+                    )
+
+                    st.caption(
+                        f"SOURCES: {source_text}"
+                    )
+
+        else:
+
+            st.caption(content)
+
+
+# ============================================================
+# CHAT GENERATION LOADER
+# ============================================================
+
+if st.session_state.processing:
+
+    render_chat_loader(
+        "GENERATING ANSWER..."
+    )
+
+
+# ============================================================
+# EMPTY STATE
+# ============================================================
+
+if (
+    not st.session_state.messages
+    and not st.session_state.processing
+    and not st.session_state.get(
+        "human_gate_active"
+    )
+):
+
+    st.code(
+        """NEXUS CHAT INTERFACE v3.0
+-------------------------
+UPLOAD A DOCUMENT BELOW AND ASK QUESTIONS.
+USE 'CLEAR ALL DOCS' BEFORE UPLOADING NEW FILE."""
+    )
+
+
+# ============================================================
+# FILE UPLOAD
+# ============================================================
+
+st.subheader(
+    "ATTACH FILE"
+)
+
+replace_old = st.checkbox(
+    "REPLACE OLD DOCUMENTS (RECOMMENDED)",
+    value=True,
+    key="replace_check",
+)
+
+uploaded = st.file_uploader(
+    "PDF, DOCX, TXT, MD",
+    type=[
+        "pdf",
+        "docx",
+        "txt",
+        "md",
+    ],
+    label_visibility="collapsed",
+)
+
+
+# ============================================================
+# FILE PROCESSING
+# ============================================================
+
+if (
+    uploaded is not None
+    and st.session_state.last_upload
+    != uploaded.name
+):
+
+    upload_placeholder = st.empty()
+
+    upload_placeholder.markdown(
+        """
+        <div class="nexus-upload-loader">
+            <span class="nexus-upload-spinner"></span>
+            <span>PROCESSING DOCUMENT...</span>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    try:
+
+        if replace_old:
+
+            clear_response = api_post(
+                "/upload/clear",
+                json_data={
+                    "collection_name": "documents",
+                },
+                timeout=10,
+            )
+
+            if (
+                clear_response is not None
+                and clear_response.status_code != 200
+            ):
+
+                upload_placeholder.empty()
+
+                st.error(
+                    "FAILED TO CLEAR OLD DOCUMENTS"
+                )
+
+                st.stop()
+
+        files = {
+            "file": (
+                uploaded.name,
+                uploaded.getvalue(),
+                uploaded.type,
+            )
+        }
+
+        data = {
+            "collection_name": "documents",
+        }
+
+        response = api_post(
+            "/upload/upload",
+            files=files,
+            data=data,
+            timeout=60,
+        )
+
+        upload_placeholder.empty()
+
+        if (
+            response is not None
+            and response.status_code == 200
+        ):
+
+            st.session_state.last_upload = (
+                uploaded.name
+            )
+
+            st.session_state.messages.append(
+                {
+                    "role": "system",
+                    "content": (
+                        f"[ FILE ATTACHED: "
+                        f"{uploaded.name} ]"
+                    ),
+                }
+            )
+
+            st.success(
+                f"UPLOADED: {uploaded.name}"
+            )
+
+            st.rerun()
+
+        else:
+
+            st.error(
+                "UPLOAD FAILED"
+            )
+
+    except Exception as e:
+
+        upload_placeholder.empty()
+
+        st.error(
+            f"UPLOAD ERROR: {str(e)}"
+        )
+
+
+st.divider()
+
+
+# ============================================================
+# CHAT INPUT
+# ============================================================
+
+if (
+    not st.session_state.processing
+    and not st.session_state.get(
+        "human_gate_active"
+    )
+):
+
+    prompt = st.chat_input(
+        "TYPE YOUR QUESTION...",
+    )
+
+    if (
+        prompt
+        and prompt.strip()
+    ):
+
+        user_query = prompt.strip()
+
+        st.session_state.messages.append(
+            {
+                "role": "user",
+                "content": user_query,
+            }
+        )
+
+        st.session_state.processing = True
+
+        st.session_state.agent_logs = [
+            {
+                "agent": "ANALYZER",
+                "status": "ACTIVE",
+            },
+            {
+                "agent": "RETRIEVER",
+                "status": "WAIT",
+            },
+            {
+                "agent": "SYNTHESIZER",
+                "status": "WAIT",
+            },
+            {
+                "agent": "CRITIC",
+                "status": "WAIT",
+            },
+        ]
+
+        st.rerun()
+
+
+# ============================================================
+# PROCESSING PIPELINE
+# ============================================================
+
+if st.session_state.processing:
+
+    if not st.session_state.messages:
+
+        st.session_state.processing = False
+
+        st.rerun()
+
+    last = st.session_state.messages[-1]
+
+    if last.get("role") != "user":
+
+        st.session_state.processing = False
+
+        st.rerun()
+
+    query = last.get(
+        "content",
+        "",
+    )
+
+    try:
+
+        if chat_ask:
+
+            response_data = chat_ask(
+                query=query,
+                session_id=(
+                    st.session_state.session_id
+                ),
+                collection_name="documents",
+            )
+
+            success = (
+                response_data is not None
+                and not response_data.get(
+                    "error"
+                )
+            )
+
+        else:
+
+            response = api_post(
+                "/chat/ask",
+                json_data={
+                    "query": query,
+                    "session_id": (
+                        st.session_state.session_id
+                    ),
+                    "collection_name": "documents",
+                },
+                timeout=130,
+            )
+
+            if (
+                response is not None
+                and response.status_code == 200
+            ):
+
+                response_data = response.json()
+
+                success = True
+
+            else:
+
+                response_data = None
+
+                success = False
+
+
+        # ----------------------------------------------------
+        # SUCCESSFUL RESPONSE
+        # ----------------------------------------------------
+
+        if success:
+
+            returned_session_id = (
+                response_data.get(
+                    "session_id"
+                )
+            )
+
+            if returned_session_id:
+
+                st.session_state.session_id = (
+                    returned_session_id
+                )
+
+                st.session_state.active_conversation_id = (
+                    returned_session_id
+                )
+
+
+            if st.session_state.get(
+                "current_conversation_title"
+            ) in (
+                None,
+                "",
+                "New Chat",
+            ):
+
+                title = query
+
+                if len(title) > 55:
+
+                    title = (
+                        title[:55].rstrip()
+                        + "..."
+                    )
+
+                st.session_state.current_conversation_title = (
+                    title
+                )
+
+
+            answer = response_data.get(
+                "answer",
+                "NO ANSWER.",
+            )
+
+            score = response_data.get(
+                "critique_score"
+            )
+
+
+            st.session_state.agent_logs = [
+                {
+                    "agent": "ANALYZER",
+                    "status": "DONE",
+                },
+                {
+                    "agent": "RETRIEVER",
+                    "status": "DONE",
+                },
+                {
+                    "agent": "SYNTHESIZER",
+                    "status": "DONE",
+                },
+                {
+                    "agent": "CRITIC",
+                    "status": "DONE",
+                },
+            ]
+
+
+            if (
+                score is not None
+                and score < 7
+            ):
+
+                st.session_state.human_gate_active = True
+
+                st.session_state.pending_answer = (
+                    answer
+                )
+
+                st.session_state.pending_score = (
+                    score
+                )
+
+                st.session_state.pending_feedback = (
+                    response_data.get(
+                        "critique_feedback",
+                        "",
+                    )
+                )
+
+                st.session_state.processing = False
+
+                st.rerun()
+
+
+            st.session_state.messages.append(
+                {
+                    "role": "assistant",
+                    "content": answer,
+                    "critique_score": score,
+                    "sources": response_data.get(
+                        "used_sources",
+                        [],
+                    ),
+                }
+            )
+
+            st.session_state.processing = False
+
+            st.rerun()
+
+
+        # ----------------------------------------------------
+        # BACKEND ERROR
+        # ----------------------------------------------------
+
+        else:
+
+            if response_data:
+
+                error_message = (
+                    response_data.get(
+                        "error",
+                        "BACKEND ERROR",
+                    )
+                )
+
+            else:
+
+                error_message = (
+                    "BACKEND UNREACHABLE"
+                )
+
+            st.session_state.messages.append(
+                {
+                    "role": "assistant",
+                    "content": (
+                        f"[ ERROR: "
+                        f"{error_message} ]"
+                    ),
+                }
+            )
+
+            st.session_state.processing = False
+
+            st.rerun()
+
+
+    except Exception as e:
+
+        st.session_state.messages.append(
+            {
+                "role": "assistant",
+                "content": (
+                    f"[ ERROR: {str(e)} ]"
+                ),
+            }
+        )
+
+        st.session_state.processing = False
+
+        st.rerun()
+
+
+# ============================================================
+# FOOTER
+# ============================================================
+
+st.caption(
+    "NEXUS | LANGGRAPH + OLLAMA + FASTEMBED"
+)

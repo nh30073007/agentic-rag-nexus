@@ -7,7 +7,7 @@ from app.core.config import settings
 router = APIRouter()
 
 
-@router.get("/health", status_code=status.HTTP_200_OK)
+@router.get("", status_code=status.HTTP_200_OK)  # ✅ prefix="/health" এর কারণে খালি
 async def health_check():
     """API health check."""
     return {

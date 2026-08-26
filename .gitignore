@@ -62,4 +62,4 @@ htmlcov/
 coverage.xml
 
 # Docker
-*.env.docker
+*.env.dockerembeddings_cache/

@@ -1,11 +1,7 @@
-"""
-Central configuration using Pydantic Settings.
-Loads from .env file automatically.
-"""
+"""Central configuration using Pydantic Settings."""
 
 from functools import lru_cache
 from typing import List, Optional
-
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -24,13 +20,30 @@ class Settings(BaseSettings):
     API_PORT: int = 8000
     FRONTEND_PORT: int = 8501
 
-    # LLM
-    GROQ_API_KEY: Optional[str] = None
-    OPENAI_API_KEY: Optional[str] = None
+    # LLM - Ollama Primary
     OLLAMA_BASE_URL: str = "http://localhost:11434"
-    OLLAMA_MODEL: str = "llama3.1"
-    DEFAULT_LLM_PROVIDER: str = "groq"
-    DEFAULT_LLM_MODEL: str = "llama-3.1-8b-instant"  # ✅ 10x higher rate limit than 70B
+    OLLAMA_MODEL: str = "phi3"
+    DEFAULT_LLM_PROVIDER: str = "ollama"
+    
+    # Ollama Performance Settings
+    OLLAMA_TIMEOUT: int = 300
+    OLLAMA_NUM_PREDICT: int = 512
+    OLLAMA_TEMPERATURE: float = 0.3
+    
+    # API Timeouts
+    LLM_API_TIMEOUT: int = 120
+    VECTOR_SEARCH_TIMEOUT: int = 10
+    
+    # Groq Fallback
+    GROQ_API_KEY: Optional[str] = None
+    DEFAULT_LLM_MODEL: str = "llama-3.1-8b-instant"
+    
+    # Fallback models
+    FALLBACK_MODELS: List[str] = [
+        "llama-3.1-8b-instant",
+        "llama3-8b-8192",
+        "mixtral-8x7b-32768"
+    ]
 
     # Embeddings
     EMBEDDING_MODEL: str = "sentence-transformers/all-MiniLM-L6-v2"

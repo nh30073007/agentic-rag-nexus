@@ -1,14 +1,5 @@
 """
 LangGraph Builder - assembles the complete Agentic RAG workflow.
-
-Graph Flow:
-START → query_analyzer → retriever → synthesizer → critic
-                                              ↓
-                                    [score >= 7?] ──YES──→ human_gate ──approved──→ END
-                                        ↓ NO                          ↓ rejected
-                                    synthesizer ←───────────────────────┘
-                                        ↓ (after max loops)
-                                        END
 """
 
 from langgraph.graph import END, START, StateGraph
@@ -26,50 +17,49 @@ from app.graph.state import GraphState
 def build_graph():
     """Build and compile the LangGraph state machine."""
     
-    # Initialize workflow with our state schema
     workflow = StateGraph(GraphState)
     
-    # ─── Register Nodes ───
+    # Register Nodes
     workflow.add_node("query_analyzer", query_analyzer_node)
     workflow.add_node("retriever", retriever_node)
     workflow.add_node("synthesizer", synthesizer_node)
     workflow.add_node("critic", critic_node)
     workflow.add_node("human_gate", human_gate_node)
     
-    # ─── Entry Point ───
+    # Entry Point
     workflow.add_edge(START, "query_analyzer")
     
-    # ─── Sequential Flow ───
+    # Sequential Flow
     workflow.add_edge("query_analyzer", "retriever")
     workflow.add_edge("retriever", "synthesizer")
     workflow.add_edge("synthesizer", "critic")
     
-    # ─── Critic Decision (Conditional) ───
+    # Critic Decision
     workflow.add_conditional_edges(
         "critic",
         critic_router,
         {
-            "approved": "human_gate",      # Good enough → ask human
-            "retry": "synthesizer",         # Bad → retry with feedback
-            "max_retries": END,             # Exhausted → end anyway
+            "approved": "human_gate",
+            "retry": "synthesizer",
+            "max_retries": END,
         }
     )
     
-    # ─── Human Gate Decision (Conditional) ───
+    # Human Gate Decision
     workflow.add_conditional_edges(
         "human_gate",
         human_router,
         {
-            "approved": END,                # Human happy → deliver
-            "retry": "synthesizer",         # Human rejected → retry
+            "approved": END,
+            "retry": "synthesizer",
         }
     )
     
-    # ─── Compile with Checkpointing ───
+    # Compile with Checkpointing
     checkpointer = get_checkpointer()
     app = workflow.compile(
         checkpointer=checkpointer,
-        interrupt_before=[],  # We use interrupt() inside human_gate node
+        interrupt_before=[],
     )
     
     return app
