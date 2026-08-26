@@ -27,7 +27,7 @@ langchain-community==0.3.14
 langchain-text-splitters==0.3.5
 langsmith==0.2.10
 
-# --- Embeddings (PERMANENT FIX: Local, tiny, no API key) ---
+# --- Embeddings (Local, tiny, no API key) ---
 fastembed==0.4.0
 
 # --- Vector Store ---
@@ -36,6 +36,7 @@ chromadb==0.6.3
 # --- Document Processing ---
 pypdf==5.1.0
 python-docx==1.1.2
+markdown==3.7
 
 # --- Cache / Session ---
 redis==5.2.1
@@ -48,5 +49,3 @@ aiofiles==24.1.0
 # --- Utilities ---
 tenacity==9.0.0
 structlog==24.4.0
-
-
